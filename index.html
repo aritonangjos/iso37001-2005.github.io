@@ -33,19 +33,30 @@
 
         .sidebar-link {
             transition: all 0.2s ease-in-out;
+            border-left: 3px solid transparent;
         }
 
         .sidebar-link.active {
-            background-color: #3b82f6; /* bg-blue-600 */
-            color: white;
+            background-color: #eef2ff; /* bg-indigo-50 */
+            color: #3b82f6; /* text-blue-600 */
             font-weight: 600;
+            border-left-color: #3b82f6; /* border-blue-600 */
         }
         
         .sidebar-link:not(.active):hover {
             background-color: #f1f5f9; /* bg-slate-100 */
         }
 
-        /* Responsive table styles */
+        .content-section {
+            transition: opacity 0.3s ease-in-out;
+        }
+
+        .content-section.hidden {
+            opacity: 0;
+            pointer-events: none;
+            position: absolute;
+        }
+
         .table-wrapper {
             display: block;
             width: 100%;
@@ -71,6 +82,19 @@
             font-size: 1.5rem;
             z-index: 1000;
         }
+        
+        .progress-bar-container {
+            background-color: #e5e7eb;
+            border-radius: 9999px;
+            overflow: hidden;
+            height: 8px;
+        }
+
+        .progress-bar {
+            background-color: #3b82f6;
+            height: 100%;
+            transition: width 0.5s ease-in-out;
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
@@ -81,23 +105,23 @@
             <div class="p-4 border-b border-slate-200">
                 <h1 class="text-xl font-bold text-slate-800">ISO 37001:2025</h1>
                 <p class="text-sm text-slate-500">Interactive Checklist</p>
-                <div id="user-id-container" class="mt-3 text-xs text-slate-500 bg-slate-100 p-2 rounded-md overflow-hidden">
+                <div id="user-id-container" class="mt-3 text-xs text-slate-500 bg-slate-100 p-2 rounded-md overflow-hidden break-words">
                     <span class="font-semibold">User ID:</span><br>
                     <span id="user-id-display">Loading...</span>
                 </div>
             </div>
-            <ul id="nav-links" class="flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible flex-grow">
+            <ul id="nav-links" class="flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible flex-grow p-2">
                 <!-- Links will be injected by JS -->
             </ul>
             <div class="p-4 border-t border-slate-200">
-                <button id="export-pdf-btn" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors">
+                <button id="export-pdf-btn" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 active:scale-95 transition-all">
                     Export to PDF
                 </button>
             </div>
         </nav>
 
         <!-- Main Content -->
-        <main id="main-content" class="flex-1 p-4 sm:p-6 lg:p-8">
+        <main id="main-content" class="flex-1 p-4 sm:p-6 lg:p-8 relative">
             <!-- Content sections will be injected and toggled by JS -->
         </main>
     </div>
@@ -113,7 +137,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot, updateDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, updateDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- Firebase Configuration ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'iso37001-checklist-app';
@@ -129,47 +153,9 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        // setLogLevel('debug');
         
         const auditData = [
-            {
-                id: 'intro',
-                title: 'Introduction',
-                content: `
-                    <h2 class="text-3xl font-bold text-slate-800 mb-4">Welcome to the Interactive ISO 37001 Checklist</h2>
-                    <div class="space-y-6 text-slate-600">
-                         <p>This application provides a dynamic and interactive way to work with the ISO 37001:2025 standard for Anti-Bribery Management Systems (ABMS). It's designed to help auditors and compliance professionals conduct gap analyses, perform internal audits, and prepare for certification. The goal is to transform the static standard into a practical tool you can use for your daily work.</p>
-                        <p>All data you enter is automatically saved to a secure database under your unique User ID. This means your work is preserved and private to you.</p>
-                        <p>The dashboard below provides multiple views of your audit progress, updating in real-time as you complete the checklist.</p>
-                    </div>
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8 items-start">
-                         <div class="bg-white p-6 rounded-lg shadow-sm">
-                            <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">Audit Findings Summary</h3>
-                            <div class="chart-container h-64">
-                                <canvas id="progressChart"></canvas>
-                            </div>
-                         </div>
-                          <div class="bg-white p-6 rounded-lg shadow-sm">
-                            <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">Overall Conformity</h3>
-                            <div class="chart-container h-64">
-                                <canvas id="conformityChart"></canvas>
-                            </div>
-                         </div>
-                         <div class="bg-white p-6 rounded-lg shadow-sm lg:col-span-2">
-                            <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">Status by Clause</h3>
-                           <div class="chart-container">
-                                <canvas id="statusByClauseChart"></canvas>
-                            </div>
-                         </div>
-                         <div class="bg-white p-6 rounded-lg shadow-sm lg:col-span-2">
-                            <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">PDCA Cycle Structure</h3>
-                           <div class="chart-container">
-                                <canvas id="pdcaChart"></canvas>
-                            </div>
-                         </div>
-                    </div>
-                `
-            },
+            { id: 'intro', title: 'Introduction', content: `<h2 class="text-3xl font-bold text-slate-800 mb-4">Welcome to the Interactive ISO 37001 Checklist</h2> <div class="space-y-6 text-slate-600"> <p>This application provides a dynamic and interactive way to work with the ISO 37001:2025 standard for Anti-Bribery Management Systems (ABMS). It's designed to help auditors and compliance professionals conduct gap analyses, perform internal audits, and prepare for certification. The goal is to transform the static standard into a practical tool you can use for your daily work.</p> <p>All data you enter is automatically saved to a secure database under your unique User ID. This means your work is preserved and private to you.</p> <p>The dashboard below provides multiple views of your audit progress, updating in real-time as you complete the checklist.</p> </div> <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8 items-start"> <div class="bg-white p-6 rounded-lg shadow-sm"> <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">Audit Findings Summary</h3> <div class="chart-container h-64"> <canvas id="progressChart"></canvas> </div> </div> <div class="bg-white p-6 rounded-lg shadow-sm"> <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">Overall Conformity</h3> <div class="chart-container h-64"> <canvas id="conformityChart"></canvas> </div> </div> <div class="bg-white p-6 rounded-lg shadow-sm lg:col-span-2"> <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">Status by Clause</h3> <div class="chart-container"> <canvas id="statusByClauseChart"></canvas> </div> </div> <div class="bg-white p-6 rounded-lg shadow-sm lg:col-span-2"> <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">PDCA Cycle Structure</h3> <div class="chart-container"> <canvas id="pdcaChart"></canvas> </div> </div> </div>` },
             { id: 'clause-4', title: '4. Context', overview: `This clause forms the strategic foundation of the entire ABMS. It compels an organization to understand its operating environment, defining *why* the ABMS is needed and *what* it must address.`, checklist: [ { ref: '4.1', req: 'Understanding the organization and its context', q: ['1. What process has been used to determine the relevant external and internal issues (e.g., PESTEL, SWOT analysis)?', '2. How are these issues monitored and reviewed for changes?', '3. **(ISO 37001:2025)** Show me the documented analysis where the organization determined whether climate change is a relevant issue for its ABMS. How was this conclusion reached?'], evidence: ['- Documented analysis of internal/external issues (e.g., PESTEL, SWOT reports).', '- Management review minutes where context is discussed.', '- Risk assessment registers.', '- Documented evaluation of climate change relevance.'] }, { ref: '4.2', req: 'Understanding the needs and expectations of interested parties', q: ['1. Who are the identified interested parties (stakeholders) for the ABMS?', '2. How were their needs and expectations (requirements) identified?', '3. **(ISO 37001:2025)** Have the requirements of interested parties concerning climate change been considered?'], evidence: ['- List or register of interested parties and their requirements.', '- Records of communication with stakeholders.', '- Compliance obligations register.'] }, { ref: '4.3', req: 'Determining the scope of the ABMS', q: ['1. How was the scope of the ABMS determined?', '2. Does the scope statement clearly define the boundaries (e.g., locations, departments, processes) and applicability?', '3. How is the scope documented and made available?'], evidence: ['- The documented Scope Statement of the ABMS.', '- ABMS Manual or equivalent top-level document.', '- Verification that the scope considers the outputs of 4.1, 4.2, and 4.5.'] }, { ref: '4.4', req: 'Anti-bribery management system', q: ['1. How has the organization defined the processes of the ABMS and their interactions?', '2. Provide an overview of the ABMS structure (e.g., manual, process maps).', '3. How is the system reviewed and improved?'], evidence: ['- ABMS Manual.', '- Process flow charts.', '- Records of management reviews and internal audits.', '- Evidence of the PDCA cycle in action.'] }, { ref: '4.5', req: 'Bribery risk assessment', q: ['1. What is the methodology for the bribery risk assessment? How are risks identified, analyzed, and evaluated?', '2. How does the assessment evaluate the effectiveness of existing controls?', '3. At what frequency is the risk assessment conducted and reviewed?', '4. How does the assessment consider risks from all required sources?'], evidence: ['- Bribery Risk Management Procedure.', '- Completed Bribery Risk Assessment forms/sheets.', '- Evidence that the assessment is regularly updated.', '- Management review minutes discussing risk assessment results.'] } ] },
             { id: 'clause-5', title: '5. Leadership', overview: `Leadership commitment is the absolute cornerstone of an effective ABMS. This clause demands active engagement and accountability from the governing body and top management.`, checklist: [ { ref: '5.1.1', req: 'Leadership and commitment (Governing Body)', q: ['1. How does the governing body (e.g., Board of Directors) exercise oversight of the ABMS?', '2. Show evidence that the governing body has approved the anti-bribery policy.', '3. How does the governing body receive and review information on the ABMS performance?'], evidence: ['- Minutes of board or committee meetings.', '- Formal resolution approving the policy.', '- Reports submitted to the governing body.'] }, { ref: '5.1.2', req: 'Leadership and commitment (Top Management)', q: ['1. How does top management ensure the ABMS is integrated into business processes?', '2. How does top management promote a culture of integrity and reporting without fear of reprisal?', '3. How are adequate resources for the ABMS ensured and allocated?'], evidence: ['- Management review meeting minutes.', '- Evidence of resource allocation (budgets, staffing).', '- Internal communications from leadership.'] }, { ref: '5.1.3', req: 'Anti-bribery culture (New in 2025)', q: ['1. What specific actions has leadership taken to actively promote an anti-bribery culture?', '2. How is the effectiveness of these cultural initiatives measured?', '3. How are ethical behaviors recognized and breaches handled consistently?'], evidence: ['- Communication plans.', '- Employee surveys on ethics.', '- Performance management criteria.', '- HR disciplinary records.', '- Whistleblower log analysis.'] }, { ref: '5.2', req: 'Anti-bribery policy', q: ['1. Does the policy contain all required elements?', '2. How is the policy communicated to all personnel?', '3. How is the policy made available to business associates?'], evidence: ['- The documented Anti-Bribery Policy.', '- Evidence of communication (training records, acknowledgements).', '- Contractual clauses referencing the policy.'] }, { ref: '5.3.2', req: 'Anti-bribery compliance function', q: ['1. Who is assigned to the anti-bribery compliance function? What are their qualifications?', '2. How is the independence and authority of this function ensured?', '3. Demonstrate direct access to the governing body/top management.'], evidence: ['- Job description and competence records.', '- Organizational chart.', '- Charter for the compliance function.', '- Minutes/records of reports to leadership.'] }, { ref: '5.3.3', req: 'Delegated decision-making', q: ['1. Is there a documented process for delegating decision-making authority?', '2. How does this process manage conflicts of interest?', '3. How is the process reviewed for effectiveness?'], evidence: ['- Documented procedure for delegated authority.', '- Records of decisions made.', '- Conflict of interest declarations.'] } ] },
             { id: 'clause-6', title: '6. Planning', overview: `This clause translates strategic analysis into a concrete plan of action. It involves setting clear objectives and formalizing actions to address identified bribery risks.`, checklist: [ { ref: '6.1', req: 'Actions to address risks and opportunities', q: ['1. For high-priority risks, show me the corresponding planned actions.', '2. How are these actions integrated into the ABMS processes?', '3. What is the process for evaluating the effectiveness of these actions?'], evidence: ['- Risk and Opportunity Register.', '- Action plans linked to risks.', '- Project plans for new controls.', '- Management review minutes.'] }, { ref: '6.2', req: 'Anti-bribery objectives and planning', q: ['1. Are the anti-bribery objectives documented and communicated?', '2. Are objectives consistent with the policy and risk assessment?', '3. Are the objectives measurable and monitored?', '4. What is the plan to achieve them (what, who, when, resources)?'], evidence: ['- Documented objectives.', '- Objectives Monitoring Sheet.', '- Action plans for achieving objectives.'] }, { ref: '6.3', req: 'Planning of changes (New in 2025)', q: ['1. What is the process for managing changes to the ABMS?', '2. How are potential consequences and ABMS integrity considered during changes?', '3. How are resources and responsibilities allocated for changes?'], evidence: ['- Change Management Procedure.', '- Change Request forms.', '- Records of changes implemented.'] } ] },
@@ -220,17 +206,16 @@
 
         // --- Firestore Realtime Listener ---
         function setupRealtimeListener() {
-            if (unsubscribe) unsubscribe(); // Unsubscribe from previous listener if exists
+            if (unsubscribe) unsubscribe(); 
 
             unsubscribe = onSnapshot(dbRef, (docSnap) => {
                 if (docSnap.exists()) {
                     complianceState = docSnap.data();
                 } else {
-                    console.log("No such document! Initializing state.");
                     initializeState();
                     setDoc(dbRef, complianceState);
                 }
-                render(); // Re-render the UI with the new state
+                render(); 
             }, (error) => {
                 console.error("Firestore snapshot error:", error);
             });
@@ -250,36 +235,84 @@
             complianceState = initialState;
         }
 
-        async function updateComplianceState(id, key, value) {
-            if(complianceState[id]){
+        async function updateSingleItem(id, key, value) {
+            if (complianceState[id] && dbRef) {
+                complianceState[id][key] = value;
                 const fieldPath = `${id}.${key}`;
                 await updateDoc(dbRef, { [fieldPath]: value }).catch(error => {
-                     console.error("Error updating document: ", error);
+                    console.error("Error updating single item: ", error);
                 });
-                // The onSnapshot listener will handle re-rendering automatically
             }
         }
+        
+        async function saveClauseData(clauseId) {
+             const clauseInputs = document.querySelectorAll(`#${clauseId} [data-id]`);
+             if (clauseInputs.length === 0 || !dbRef) return;
+
+             const batch = writeBatch(db);
+             let updates = {};
+
+             clauseInputs.forEach(input => {
+                const id = input.dataset.id;
+                if (input.classList.contains('status-select')) {
+                    updates[`${id}.status`] = input.value;
+                    if(complianceState[id]) complianceState[id].status = input.value;
+                }
+                if (input.classList.contains('notes-input')) {
+                    updates[`${id}.notes`] = input.value;
+                    if(complianceState[id]) complianceState[id].notes = input.value;
+                }
+             });
+
+             batch.update(dbRef, updates);
+             await batch.commit();
+             updateAllCharts(); // Manually update charts after batch save
+        }
+
 
         // --- Rendering ---
         function render() {
+            const activeSectionId = document.querySelector('.sidebar-link.active')?.dataset.id || 'intro';
             mainContent.innerHTML = '';
             navLinksContainer.innerHTML = '';
 
             auditData.forEach(section => {
                 const navLink = document.createElement('li');
-                navLink.innerHTML = `<a href="#" data-id="${section.id}" class="sidebar-link block p-3 px-4 text-sm text-slate-600">${section.title}</a>`;
+                navLink.innerHTML = `<a href="#" data-id="${section.id}" class="sidebar-link block p-3 px-4 text-sm text-slate-600 rounded-md">${section.title}</a>`;
                 navLinksContainer.appendChild(navLink);
 
                 const sectionDiv = document.createElement('div');
                 sectionDiv.id = section.id;
-                sectionDiv.className = 'content-section hidden';
+                sectionDiv.className = 'content-section'; 
+
+                if (section.id !== activeSectionId) {
+                    sectionDiv.classList.add('hidden');
+                }
 
                 if (section.content) {
                     sectionDiv.innerHTML = section.content;
                 } else {
+                    const totalItems = section.checklist.length;
+                    const completedItems = section.checklist.filter((_, index) => {
+                        const state = complianceState[`${section.id}-${index}`];
+                        return state && state.status !== 'NA';
+                    }).length;
+                    const progressPercentage = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
+
                     let checklistHtml = `
                         <h2 class="text-3xl font-bold text-slate-800 mb-2">Clause ${section.title}</h2>
-                        <p class="mb-6 text-slate-600">${section.overview}</p>
+                        <p class="mb-4 text-slate-600">${section.overview}</p>
+                        
+                        <div class="mb-6">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-sm font-medium text-slate-700">Clause Progress</span>
+                                <span class="text-sm font-medium text-slate-500">${completedItems} / ${totalItems} Completed</span>
+                            </div>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar" style="width: ${progressPercentage}%;"></div>
+                            </div>
+                        </div>
+
                         <div class="bg-white rounded-lg shadow-sm overflow-hidden">
                             <div class="table-wrapper">
                                 <table class="min-w-full divide-y divide-slate-200">
@@ -325,18 +358,24 @@
                                 </table>
                             </div>
                         </div>
+                        <div class="mt-6 text-right">
+                             <button data-clause-id="${section.id}" class="save-clause-btn bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 active:scale-95 transition-all">
+                                Save Changes
+                            </button>
+                        </div>
                     `;
                     sectionDiv.innerHTML = checklistHtml;
                 }
                 mainContent.appendChild(sectionDiv);
             });
-
-            showSection(mainContent.querySelector('.content-section')?.id || 'intro');
-            updateAllCharts();
+            
+            showSection(activeSectionId);
         }
 
         function showSection(id) {
-            document.querySelectorAll('.content-section').forEach(s => s.classList.add('hidden'));
+            document.querySelectorAll('.content-section').forEach(s => {
+                 if(s.id !== id) s.classList.add('hidden');
+            });
             const sectionToShow = document.getElementById(id);
             if(sectionToShow) {
                 sectionToShow.classList.remove('hidden');
@@ -350,7 +389,7 @@
             });
 
             if (id === 'intro') {
-                initCharts();
+                updateAllCharts();
             }
         }
         
@@ -364,12 +403,31 @@
                 }
             });
 
-            mainContent.addEventListener('input', (e) => {
-                if (e.target.classList.contains('status-select')) {
-                    updateComplianceState(e.target.dataset.id, 'status', e.target.value);
+            mainContent.addEventListener('change', (e) => {
+                if (e.target.classList.contains('status-select') || e.target.classList.contains('notes-input')) {
+                    updateSingleItem(e.target.dataset.id, e.target.classList.contains('status-select') ? 'status' : 'notes', e.target.value);
                 }
-                if (e.target.classList.contains('notes-input')) {
-                    updateComplianceState(e.target.dataset.id, 'notes', e.target.value);
+            });
+
+            mainContent.addEventListener('click', async (e) => {
+                if(e.target.classList.contains('save-clause-btn')) {
+                    const button = e.target;
+                    const originalText = button.textContent;
+                    button.textContent = 'Saving...';
+                    button.disabled = true;
+
+                    await saveClauseData(button.dataset.clauseId);
+
+                    button.textContent = 'Saved!';
+                    button.classList.remove('bg-green-600', 'hover:bg-green-700');
+                    button.classList.add('bg-blue-600');
+                    
+                    setTimeout(() => {
+                        button.textContent = originalText;
+                        button.classList.remove('bg-blue-600');
+                        button.classList.add('bg-green-600', 'hover:bg-green-700');
+                        button.disabled = false;
+                    }, 2000);
                 }
             });
 
@@ -377,21 +435,9 @@
         }
 
         // --- Charting ---
-        function initCharts() {
-            Object.values(charts).forEach(chart => { if(chart) chart.destroy(); });
-
-            const pdcaCtx = document.getElementById('pdcaChart')?.getContext('2d');
-            if(pdcaCtx) {
-                charts.pdca = new Chart(pdcaCtx, {
-                    type: 'doughnut',
-                    data: { labels: ['Plan (Clauses 4, 5, 6)', 'Do (Clauses 7, 8)', 'Check (Clause 9)', 'Act (Clause 10)'], datasets: [{ label: 'PDCA Cycle', data: [3, 2, 1, 1], backgroundColor: ['#60a5fa', '#34d399', '#facc15', '#fb923c'], borderColor: '#ffffff', borderWidth: 4 }] },
-                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }
-                });
-            }
-            updateAllCharts();
-        }
-
         function updateAllCharts() {
+             Object.values(charts).forEach(chart => { if(chart) chart.destroy(); });
+
             if(!complianceState || Object.keys(complianceState).length === 0) return;
             
             // Chart 1: Overall Progress
@@ -399,7 +445,6 @@
             if (progressCtx) {
                 const counts = { C: 0, NC: 0, OFI: 0 };
                 Object.values(complianceState).forEach(item => { if (counts.hasOwnProperty(item.status)) counts[item.status]++; });
-                if (charts.progress) charts.progress.destroy();
                 charts.progress = new Chart(progressCtx, { type: 'bar', data: { labels: ['Conformity (C)', 'Nonconformity (NC)', 'Opportunity (OFI)'], datasets: [{ label: 'Audit Findings', data: [counts.C, counts.NC, counts.OFI], backgroundColor: ['#34d399', '#f87171', '#fbbf24'] }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { precision: 0 } } } } });
             }
 
@@ -409,7 +454,6 @@
                 const applicableItems = Object.values(complianceState).filter(item => item.status !== 'NA');
                 const conformingItems = applicableItems.filter(item => item.status === 'C');
                 const conformityRate = applicableItems.length > 0 ? (conformingItems.length / applicableItems.length) * 100 : 0;
-                if (charts.conformity) charts.conformity.destroy();
                 charts.conformity = new Chart(conformityCtx, { type: 'doughnut', data: { labels: ['Conforming', 'Other'], datasets: [{ data: [conformityRate, 100 - conformityRate], backgroundColor: ['#34d399', '#e5e7eb'], borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { display: false }, tooltip: { enabled: false } } } });
             }
 
@@ -425,8 +469,17 @@
                     clauseItems.forEach(itemKey => { const item = complianceState[itemKey]; if (counts.hasOwnProperty(item.status)) counts[item.status]++; });
                     clauseData.C.push(counts.C); clauseData.NC.push(counts.NC); clauseData.OFI.push(counts.OFI);
                 });
-                if (charts.statusByClause) charts.statusByClause.destroy();
                 charts.statusByClause = new Chart(statusByClauseCtx, { type: 'bar', data: { labels: clauseLabels, datasets: [{ label: 'Conformity', data: clauseData.C, backgroundColor: '#34d399' }, { label: 'Nonconformity', data: clauseData.NC, backgroundColor: '#f87171' }, { label: 'Opportunity', data: clauseData.OFI, backgroundColor: '#fbbf24' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } } } });
+            }
+
+             // Chart 4: PDCA
+            const pdcaCtx = document.getElementById('pdcaChart')?.getContext('2d');
+            if(pdcaCtx) {
+                charts.pdca = new Chart(pdcaCtx, {
+                    type: 'doughnut',
+                    data: { labels: ['Plan (Clauses 4, 5, 6)', 'Do (Clauses 7, 8)', 'Check (Clause 9)', 'Act (Clause 10)'], datasets: [{ label: 'PDCA Cycle', data: [3, 2, 1, 1], backgroundColor: ['#60a5fa', '#34d399', '#facc15', '#fb923c'], borderColor: '#ffffff', borderWidth: 4 }] },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }
+                });
             }
         }
 
@@ -436,29 +489,32 @@
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
             
-            const contentToExport = document.createElement('div');
-            document.body.appendChild(contentToExport);
+            const tempContainer = document.createElement('div');
+            tempContainer.style.position = 'absolute';
+            tempContainer.style.left = '-9999px';
+            tempContainer.style.width = '210mm'; // A4 width
+            document.body.appendChild(tempContainer);
             
-            // Clone all content sections into a temporary container for rendering
-            const allSections = document.querySelectorAll('.content-section');
-            allSections.forEach(section => {
-                const clone = section.cloneNode(true);
+            const originalActiveSection = document.querySelector('.content-section:not(.hidden)');
+
+            for (const section of auditData) {
+                const clone = document.getElementById(section.id).cloneNode(true);
                 clone.classList.remove('hidden');
-                clone.style.padding = '10mm'; // Add padding for PDF margins
-                contentToExport.appendChild(clone);
-            });
-            
+                clone.style.padding = '10mm';
+                tempContainer.appendChild(clone);
+            }
+
             try {
-                const canvas = await html2canvas(contentToExport, {
-                    scale: 2, // Improve image quality
+                const canvas = await html2canvas(tempContainer, {
+                    scale: 2,
                     useCORS: true,
-                    windowWidth: contentToExport.scrollWidth,
-                    windowHeight: contentToExport.scrollHeight
+                    width: tempContainer.scrollWidth,
+                    height: tempContainer.scrollHeight
                 });
                 
                 const imgData = canvas.toDataURL('image/png');
-                const imgWidth = 210; // A4 width in mm
-                const pageHeight = 295; // A4 height in mm
+                const imgWidth = 210;
+                const pageHeight = 295;
                 const imgHeight = canvas.height * imgWidth / canvas.width;
                 let heightLeft = imgHeight;
                 let position = 0;
@@ -466,18 +522,18 @@
                 pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
                 heightLeft -= pageHeight;
 
-                while (heightLeft >= 0) {
+                while (heightLeft > 0) {
                     position = heightLeft - imgHeight;
                     pdf.addPage();
                     pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
                     heightLeft -= pageHeight;
                 }
-
                 pdf.save('ISO37001-Audit-Report.pdf');
+
             } catch (error) {
                 console.error("Error generating PDF:", error);
             } finally {
-                document.body.removeChild(contentToExport);
+                document.body.removeChild(tempContainer);
                 pdfLoader.classList.add('hidden');
             }
         }
