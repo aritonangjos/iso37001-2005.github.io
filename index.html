@@ -115,13 +115,18 @@
 
         document.addEventListener('DOMContentLoaded', async () => {
             // --- Firebase Configuration ---
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'iso37001-checklist-app';
-            let firebaseConfig;
-            try {
-                firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "DEMO", authDomain: "DEMO", projectId: "DEMO" };
-            } catch(e) {
-                console.error("Firebase config parsing error:", e);
-                firebaseConfig = { apiKey: "DEMO", authDomain: "DEMO", projectId: "DEMO" };
+    const firebaseConfig = {
+        apiKey: "AIzaSyA2DLdoUxu28SC_mnvXLijeuzLrq0pNrX4",
+        authDomain: "iso-checklist.firebaseapp.com",
+        projectId: "iso-checklist",
+        storageBucket: "iso-checklist.firebasestorage.app",
+        messagingSenderId: "59632743020",
+        appId: "1:59632743020:web:615b43ac0132195e94de49"
+      };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+</script>
             }
             
             // --- App Initialization ---
