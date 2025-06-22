@@ -6,6 +6,8 @@
     <title>Interactive ISO 37001:2025 Audit Checklist</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <!-- Chosen Palette: Professional Blue & Slate -->
     <!-- Application Structure Plan: A single-page application with a fixed sidebar for primary navigation between clauses and a main content area that dynamically displays the selected section. This structure is chosen for usability, allowing auditors to easily jump between different parts of the standard without losing context, which mirrors a real-world auditing workflow. The main content for each clause starts with a contextual overview followed by a fully interactive checklist table. This turns the static report into a task-oriented tool. Key interactions include dropdowns for compliance status and text areas for notes, with a live-updating progress chart providing immediate feedback. This design prioritizes non-linear exploration and active use over passive reading. -->
     <!-- Visualization & Content Choices: 
@@ -26,7 +28,7 @@
             margin: auto;
             height: 350px;
             width: 100%;
-            max-width: 450px;
+            max-width: 500px;
         }
 
         .sidebar-link {
@@ -54,20 +56,44 @@
         td, th {
             white-space: normal;
         }
+
+        #pdf-export-loader {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.5rem;
+            z-index: 1000;
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
 
-    <div class="flex flex-col md:flex-row min-h-screen">
+    <div id="app-container" class="flex flex-col md:flex-row min-h-screen">
         <!-- Sidebar Navigation -->
-        <nav id="sidebar" class="w-full md:w-64 bg-white border-b md:border-b-0 md:border-r border-slate-200 flex-shrink-0">
-            <div class="p-4">
+        <nav id="sidebar" class="w-full md:w-72 bg-white border-b md:border-b-0 md:border-r border-slate-200 flex-shrink-0 flex flex-col">
+            <div class="p-4 border-b border-slate-200">
                 <h1 class="text-xl font-bold text-slate-800">ISO 37001:2025</h1>
                 <p class="text-sm text-slate-500">Interactive Checklist</p>
+                <div id="user-id-container" class="mt-3 text-xs text-slate-500 bg-slate-100 p-2 rounded-md overflow-hidden">
+                    <span class="font-semibold">User ID:</span><br>
+                    <span id="user-id-display">Loading...</span>
+                </div>
             </div>
-            <ul id="nav-links" class="flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible">
+            <ul id="nav-links" class="flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible flex-grow">
                 <!-- Links will be injected by JS -->
             </ul>
+            <div class="p-4 border-t border-slate-200">
+                <button id="export-pdf-btn" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors">
+                    Export to PDF
+                </button>
+            </div>
         </nav>
 
         <!-- Main Content -->
@@ -75,357 +101,391 @@
             <!-- Content sections will be injected and toggled by JS -->
         </main>
     </div>
+    
+    <footer class="text-center text-sm text-slate-400 py-4 bg-slate-50">
+        Created by Joshua Aritonang
+    </footer>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            
-            const auditData = [
-                {
-                    id: 'intro',
-                    title: 'Introduction',
-                    content: `
-                        <h2 class="text-3xl font-bold text-slate-800 mb-4">Welcome to the Interactive ISO 37001 Checklist</h2>
-                        <div class="space-y-6 text-slate-600">
-                            <p>This application provides a dynamic and interactive way to work with the ISO 37001:2025 standard for Anti-Bribery Management Systems (ABMS). It's designed to help auditors and compliance professionals conduct gap analyses, perform internal audits, and prepare for certification. The goal is to transform the static standard into a practical tool you can use for your daily work.</p>
-                            <p>The standard is built on the Plan-Do-Check-Act (PDCA) cycle, a systematic process for continual improvement. This structure ensures a logical flow from planning and implementing controls to monitoring their effectiveness and making necessary adjustments.</p>
-                        </div>
-                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8 items-center">
-                             <div>
-                                <h3 class="text-xl font-semibold text-slate-700 mb-4">PDCA Cycle Structure</h3>
-                                <div class="chart-container">
-                                    <canvas id="pdcaChart"></canvas>
-                                </div>
-                             </div>
-                             <div>
-                                <h3 class="text-xl font-semibold text-slate-700 mb-4">Audit Progress Status</h3>
-                                 <p class="text-slate-600 mb-4">This chart provides a live summary of your audit findings. As you update the compliance status for each checklist item, this graph will automatically refresh to reflect the changes.</p>
-                                <div class="chart-container h-64">
-                                    <canvas id="progressChart"></canvas>
-                                </div>
-                             </div>
-                        </div>
-                    `
-                },
-                {
-                    id: 'clause-4',
-                    title: '4. Context',
-                    overview: `This clause forms the strategic foundation of the entire ABMS. It compels an organization to understand its operating environment, defining *why* the ABMS is needed and *what* it must address. A failure to properly establish context inevitably leads to weaknesses throughout the system. The 2025 revision introduces the critical requirement to consider climate change as a potential factor influencing bribery risk, integrating the ABMS with broader ESG and ERM frameworks.`,
-                    checklist: [
-                        { ref: '4.1', req: 'Understanding the organization and its context', q: ['1. What process has been used to determine the relevant external and internal issues (e.g., PESTEL, SWOT analysis)?', '2. How are these issues monitored and reviewed for changes?', '3. **(ISO 37001:2025)** Show me the documented analysis where the organization determined whether climate change is a relevant issue for its ABMS. How was this conclusion reached?'], evidence: ['- Documented analysis of internal/external issues (e.g., PESTEL, SWOT reports).', '- Management review minutes where context is discussed.', '- Risk assessment registers.', '- Documented evaluation of climate change relevance.'] },
-                        { ref: '4.2', req: 'Understanding the needs and expectations of interested parties', q: ['1. Who are the identified interested parties (stakeholders) for the ABMS?', '2. How were their needs and expectations (requirements) identified?', '3. **(ISO 37001:2025)** Have the requirements of interested parties concerning climate change been considered?'], evidence: ['- List or register of interested parties and their requirements.', '- Records of communication with stakeholders.', '- Compliance obligations register.'] },
-                        { ref: '4.3', req: 'Determining the scope of the ABMS', q: ['1. How was the scope of the ABMS determined?', '2. Does the scope statement clearly define the boundaries (e.g., locations, departments, processes) and applicability?', '3. How is the scope documented and made available?'], evidence: ['- The documented Scope Statement of the ABMS.', '- ABMS Manual or equivalent top-level document.', '- Verification that the scope considers the outputs of 4.1, 4.2, and 4.5.'] },
-                        { ref: '4.4', req: 'Anti-bribery management system', q: ['1. How has the organization defined the processes of the ABMS and their interactions?', '2. Provide an overview of the ABMS structure (e.g., manual, process maps).', '3. How is the system reviewed and improved?'], evidence: ['- ABMS Manual.', '- Process flow charts.', '- Records of management reviews and internal audits.', '- Evidence of the PDCA cycle in action.'] },
-                        { ref: '4.5', req: 'Bribery risk assessment', q: ['1. What is the methodology for the bribery risk assessment? How are risks identified, analyzed, and evaluated?', '2. How does the assessment evaluate the effectiveness of existing controls?', '3. At what frequency is the risk assessment conducted and reviewed?', '4. How does the assessment consider risks from all required sources?'], evidence: ['- Bribery Risk Management Procedure.', '- Completed Bribery Risk Assessment forms/sheets.', '- Evidence that the assessment is regularly updated.', '- Management review minutes discussing risk assessment results.'] }
-                    ]
-                },
-                {
-                    id: 'clause-5',
-                    title: '5. Leadership',
-                    overview: `Leadership commitment is the absolute cornerstone of an effective ABMS. This clause demands active engagement and accountability from the governing body and top management. The 2025 version significantly reinforces this by mandating the development and promotion of an explicit anti-bribery culture. Auditing this requires looking beyond policy documents to tangible indicators like leadership communication, resource allocation, and employee perceptions of the "tone at the top."`,
-                    checklist: [
-                        { ref: '5.1.1', req: 'Leadership and commitment (Governing Body)', q: ['1. How does the governing body (e.g., Board of Directors) exercise oversight of the ABMS?', '2. Show evidence that the governing body has approved the anti-bribery policy.', '3. How does the governing body receive and review information on the ABMS performance?'], evidence: ['- Minutes of board or committee meetings.', '- Formal resolution approving the policy.', '- Reports submitted to the governing body.'] },
-                        { ref: '5.1.2', req: 'Leadership and commitment (Top Management)', q: ['1. How does top management ensure the ABMS is integrated into business processes?', '2. How does top management promote a culture of integrity and reporting without fear of reprisal?', '3. How are adequate resources for the ABMS ensured and allocated?'], evidence: ['- Management review meeting minutes.', '- Evidence of resource allocation (budgets, staffing).', '- Internal communications from leadership.'] },
-                        { ref: '5.1.3', req: 'Anti-bribery culture (New in 2025)', q: ['1. What specific actions has leadership taken to actively promote an anti-bribery culture?', '2. How is the effectiveness of these cultural initiatives measured?', '3. How are ethical behaviors recognized and breaches handled consistently?'], evidence: ['- Communication plans.', '- Employee surveys on ethics.', '- Performance management criteria.', '- HR disciplinary records.', '- Whistleblower log analysis.'] },
-                        { ref: '5.2', req: 'Anti-bribery policy', q: ['1. Does the policy contain all required elements?', '2. How is the policy communicated to all personnel?', '3. How is the policy made available to business associates?'], evidence: ['- The documented Anti-Bribery Policy.', '- Evidence of communication (training records, acknowledgements).', '- Contractual clauses referencing the policy.'] },
-                        { ref: '5.3.2', req: 'Anti-bribery compliance function', q: ['1. Who is assigned to the anti-bribery compliance function? What are their qualifications?', '2. How is the independence and authority of this function ensured?', '3. Demonstrate direct access to the governing body/top management.'], evidence: ['- Job description and competence records.', '- Organizational chart.', '- Charter for the compliance function.', '- Minutes/records of reports to leadership.'] },
-                        { ref: '5.3.3', req: 'Delegated decision-making', q: ['1. Is there a documented process for delegating decision-making authority?', '2. How does this process manage conflicts of interest?', '3. How is the process reviewed for effectiveness?'], evidence: ['- Documented procedure for delegated authority.', '- Records of decisions made.', '- Conflict of interest declarations.'] }
-                    ]
-                },
-                 {
-                    id: 'clause-6',
-                    title: '6. Planning',
-                    overview: `This clause translates strategic analysis into a concrete plan of action. It involves setting clear objectives and formalizing actions to address identified bribery risks. A critical audit point is verifying the 'golden thread' that connects risks (Clause 4.5) to planned actions (6.1) and measurable objectives (6.2). The 2025 revision formalizes the need for planned management of changes to the ABMS.`,
-                    checklist: [
-                        { ref: '6.1', req: 'Actions to address risks and opportunities', q: ['1. For high-priority risks, show me the corresponding planned actions.', '2. How are these actions integrated into the ABMS processes?', '3. What is the process for evaluating the effectiveness of these actions?'], evidence: ['- Risk and Opportunity Register.', '- Action plans linked to risks.', '- Project plans for new controls.', '- Management review minutes.'] },
-                        { ref: '6.2', req: 'Anti-bribery objectives and planning', q: ['1. Are the anti-bribery objectives documented and communicated?', '2. Are objectives consistent with the policy and risk assessment?', '3. Are the objectives measurable and monitored?', '4. What is the plan to achieve them (what, who, when, resources)?'], evidence: ['- Documented objectives.', '- Objectives Monitoring Sheet.', '- Action plans for achieving objectives.'] },
-                        { ref: '6.3', req: 'Planning of changes (New in 2025)', q: ['1. What is the process for managing changes to the ABMS?', '2. How are potential consequences and ABMS integrity considered during changes?', '3. How are resources and responsibilities allocated for changes?'], evidence: ['- Change Management Procedure.', '- Change Request forms.', '- Records of changes implemented.'] }
-                    ]
-                },
-                {
-                    id: 'clause-7',
-                    title: '7. Support',
-                    overview: `This clause covers the resources, competence, awareness, communication, and documented information required for the ABMS to function. It's not just about training; it's about the entire lifecycle of competence management, from hiring to ongoing development. The 2025 revision enhances requirements for managing conflicts of interest in the employment process and refines training requirements.`,
-                    checklist: [
-                        { ref: '7.1', req: 'Resources', q: ['1. How are ABMS resource needs determined?', '2. Provide evidence of sufficient resources (personnel, financial, tech).', '3. Is the compliance function adequately resourced?'], evidence: ['- Budgets.', '- Staffing plans.', '- Evidence of tech investment.', '- Management review minutes.'] },
-                        { ref: '7.2.1', req: 'Competence (General)', q: ['1. How are competence requirements for key roles determined?', '2. What happens if a person is not competent?', '3. Show documented evidence of competence for high-risk roles.'], evidence: ['- Job descriptions/skill matrices.', '- Training records, certifications.', '- Performance appraisals.'] },
-                        { ref: '7.2.2', req: 'Competence (Employment process)', q: ['1. What due diligence is performed on new hires?', '2. How are incentive schemes reviewed to prevent encouraging bribery?', '3. What is the process for managing conflicts of interest?'], evidence: ['- HR recruitment procedures.', '- Background check reports.', '- Compensation policies.', '- Conflict of Interest forms.'] },
-                        { ref: '7.3', req: 'Awareness and Training', q: ['1. What is the content of awareness and training programs?', '2. How is training tailored to different risk roles?', '3. What training is provided to business associates?', '4. How is training effectiveness evaluated?'], evidence: ['- Training materials.', '- Attendance records.', '- Post-training assessments.'] },
-                        { ref: '7.4', req: 'Communication', q: ['1. What is the communication plan for the ABMS?', '2. How are internal stakeholders kept informed?', '3. What is communicated externally about the anti-bribery stance?'], evidence: ['- Communication Plan.', '- Internal newsletters.', '- Supplier code of conduct.'] },
-                        { ref: '7.5', req: 'Documented information', q: ['1. Is there a procedure for controlling documented information?', '2. How are documents identified, approved, and version controlled?', '3. How is information protected?', '4. What are the retention and disposition processes?'], evidence: ['- Document Control Procedure.', '- Master List of Documents.', '- Review of sample documents for control.', '- Check of system access controls.'] }
-                    ]
-                },
-                {
-                    id: 'clause-8',
-                    title: '8. Operation',
-                    overview: `This is where plans become day-to-day actions. It's the heart of the "Do" phase, covering due diligence, financial and non-financial controls, gifts, and investigations. A key audit focus is the proportionality of due diligence; a "one-size-fits-all" approach is a red flag. The 2025 revision explicitly adds mergers and acquisitions (M&A) as a specific non-financial risk area to be controlled.`,
-                    checklist: [
-                        { ref: '8.1', req: 'Operational planning and control', q: ['1. How are operational processes (e.g., procurement) controlled to prevent bribery?', '2. What criteria are established for these processes?', '3. How is it ensured processes are carried out as planned?'], evidence: ['- Process flow charts.', '- Documented procedures.', '- Checklists or work instructions.'] },
-                        { ref: '8.2', req: 'Due diligence', q: ['1. What is the due diligence procedure?', '2. How does it define different levels of diligence based on risk?', '3. Show examples for a high-risk and low-risk business associate.', '4. How are findings used in decision-making?'], evidence: ['- Due Diligence Procedure.', '- Completed due diligence reports.', '- Records of decisions based on due diligence.'] },
-                        { ref: '8.3', req: 'Financial controls', q: ['1. What financial controls are in place (e.g., segregation of duties)?', '2. How are controls documented and communicated?', '3. How are high-risk payments controlled?'], evidence: ['- Financial procedures.', '- Delegation of Authority matrix.', '- Sample of payment records.'] },
-                        { ref: '8.4', req: 'Non-financial controls', q: ['1. What non-financial controls are in place?', '2. **(ISO 37001:2025)** What specific controls manage bribery risks during M&A?'], evidence: ['- Procurement procedures.', '- Sales procedures.', '- M&A due diligence reports.', '- HR procedures.'] },
-                        { ref: '8.5', req: 'Controls by controlled organizations/associates', q: ['1. How does the organization ensure subsidiaries implement controls?', '2. What steps ensure high-risk associates have controls (e.g., contractual requirements)?'], evidence: ['- Anti-bribery clauses in contracts.', '- Supplier Code of Conduct.', '- Results of business associate audits.'] },
-                        { ref: '8.6', req: 'Anti-bribery commitments', q: ['1. How are commitments obtained from personnel?', '2. How are commitments obtained from business associates?'], evidence: ['- Signed employment contracts.', '- Signed declarations from associates.'] },
-                        { ref: '8.7', req: 'Gifts, hospitality, donations', q: ['1. What is the policy and procedure?', '2. What are the approval thresholds?', '3. How are these items recorded and monitored?'], evidence: ['- Gifts & Hospitality Policy.', '- Register/log of gifts.', '- Approval forms.'] },
-                        { ref: '8.8', req: 'Managing inadequacy of controls', q: ['1. What is the process if an associate refuses to agree to controls?', '2. What happens if a transaction violates policy?', '3. Show records of how such an inadequacy was managed.'], evidence: ['- Documented procedure.', '- Records of suspended relationships.', '- Risk assessments for proceeding.'] },
-                        { ref: '8.9', req: 'Raising concerns', q: ['1. What channels are available for whistleblowing?', '2. How is confidentiality/anonymity ensured?', '3. How is the non-retaliation policy enforced?'], evidence: ['- Whistleblowing Procedure.', '- Communication promoting channels.', '- Interviews with staff.'] },
-                        { ref: '8.10', req: 'Investigating and dealing with bribery', q: ['1. What is the investigation procedure?', '2. How is investigator objectivity ensured?', '3. How are results used to take action?'], evidence: ['- Investigation Procedure.', '- Sample Investigation Reports.', '- Evidence of disciplinary actions.', '- Link to corrective actions.'] }
-                    ]
-                },
-                {
-                    id: 'clause-9',
-                    title: '9. Performance Evaluation',
-                    overview: `This is the "Check" phase, where the organization systematically measures and reviews ABMS performance. ISO 37001 is uniquely rigorous, requiring three distinct review tiers: Internal Audit (9.2), Top Management Review (9.3), and a technical review by the Anti-Bribery Compliance Function (9.4). A key audit task is to verify that all three review loops are functioning and that their outputs inform one another.`,
-                    checklist: [
-                        { ref: '9.1', req: 'Monitoring, measurement, analysis and evaluation', q: ['1. What KPIs are used to monitor the ABMS?', '2. How are metrics analyzed to evaluate effectiveness?', '3. Show reports demonstrating this analysis.'], evidence: ['- List of KPIs.', '- Performance dashboards.', '- Analysis in review meetings.'] },
-                        { ref: '9.2', req: 'Internal audit', q: ['1. Is there a documented internal audit procedure?', '2. Show the audit programme. How is frequency determined?', '3. How is auditor competence and impartiality ensured?', '4. Review a sample of audit reports and nonconformities.'], evidence: ['- Internal Audit Procedure.', '- Audit Plan/Schedule.', '- Competence records for auditors.', '- Completed Audit Reports.'] },
-                        { ref: '9.3', req: 'Management review', q: ['1. How frequently are management reviews conducted?', '2. Do reviews cover all mandatory inputs?', '3. What are the outputs? Show decisions on improvements.'], evidence: ['- Management Review Procedure.', '- Management Review minutes.', '- Action plans from the review.'] },
-                        { ref: '9.4', req: 'Review by anti-bribery function', q: ['1. Is there a documented process for this review?', '2. How frequently does it occur?', '3. Does it cover its specific inputs?', '4. Show reports from this review submitted to leadership.'], evidence: ['- Documented procedure for the review.', '- The function\'s review report.', '- Records showing delivery to leadership.'] }
-                    ]
-                },
-                {
-                    id: 'clause-10',
-                    title: '10. Improvement',
-                    overview: `The "Act" phase focuses on learning, correcting deficiencies, and strengthening the ABMS over time. The 2025 revision emphasizes proactive continual improvement (10.1) over reactive corrective action (10.2). Auditors must distinguish between a 'correction' (immediate fix) and a 'corrective action' (eliminating the root cause). Verifying true root cause analysis is key.`,
-                    checklist: [
-                        { ref: '10.1', req: 'Continual improvement', q: ['1. How are improvement opportunities identified?', '2. Provide examples of recent improvements.', '3. How are Clause 9 outputs used to drive improvement?'], evidence: ['- Management review outputs.', '- Corrective action reports.', '- Updated procedures.', '- Improvement log.'] },
-                        { ref: '10.2', req: 'Nonconformity and corrective action', q: ['1. What is the procedure for managing nonconformities?', '2. For a sample nonconformity, show the correction.', '3. Show the root cause analysis performed.', '4. What was the corrective action, and how was its effectiveness verified?'], evidence: ['- Corrective Action Procedure.', '- Corrective Action Reports (CARs).', '- Evidence of root cause analysis.', '- Records of verification of effectiveness.'] }
-                    ]
-                },
-                {
-                    id: 'appendices',
-                    title: 'Appendices',
-                    content: `
-                        <div class="space-y-8">
-                            <div>
-                                <h3 class="text-2xl font-semibold text-slate-800 mb-3">Appendix A: Glossary</h3>
-                                <div class="space-y-4 text-slate-600">
-                                    <details class="bg-white p-4 rounded-lg shadow-sm cursor-pointer"><summary class="font-semibold">Anti-bribery Compliance Function</summary><p class="mt-2">Person(s) with responsibility and authority for the operation of the ABMS. Must have competence, status, authority, and independence, with direct access to the governing body and top management.</p></details>
-                                    <details class="bg-white p-4 rounded-lg shadow-sm cursor-pointer"><summary class="font-semibold">Bribery</summary><p class="mt-2">Offering, promising, giving, accepting, or soliciting of an undue advantage of any value, directly or indirectly, in violation of applicable law, as an inducement or reward for a person acting or refraining from acting in relation to their duties.</p></details>
-                                    <details class="bg-white p-4 rounded-lg shadow-sm cursor-pointer"><summary class="font-semibold">Business Associate</summary><p class="mt-2">An external party with whom the organization has, or plans to establish, some form of business relationship (e.g., clients, agents, suppliers, contractors).</p></details>
-                                    <details class="bg-white p-4 rounded-lg shadow-sm cursor-pointer"><summary class="font-semibold">Due Diligence</summary><p class="mt-2">The process of assessing in greater detail the nature and extent of the bribery risk to help the organization make decisions regarding a specific transaction, project, or relationship.</p></details>
-                                    <details class="bg-white p-4 rounded-lg shadow-sm cursor-pointer"><summary class="font-semibold">Governing Body</summary><p class="mt-2">The group or body with ultimate responsibility and authority for an organization’s activities, governance, and policies (e.g., Board of Directors). Not all organizations have one.</p></details>
-                                </div>
+    <div id="pdf-export-loader" class="hidden">
+        <p>Generating PDF, please wait...</p>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, updateDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Firebase Configuration ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'iso37001-checklist-app';
+        let firebaseConfig;
+        try {
+            firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "DEMO", authDomain: "DEMO", projectId: "DEMO" };
+        } catch(e) {
+            console.error("Firebase config parsing error:", e);
+            firebaseConfig = { apiKey: "DEMO", authDomain: "DEMO", projectId: "DEMO" };
+        }
+        
+        // --- App Initialization ---
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        // setLogLevel('debug');
+        
+        const auditData = [
+            {
+                id: 'intro',
+                title: 'Introduction',
+                content: `
+                    <h2 class="text-3xl font-bold text-slate-800 mb-4">Welcome to the Interactive ISO 37001 Checklist</h2>
+                    <div class="space-y-6 text-slate-600">
+                         <p>This application provides a dynamic and interactive way to work with the ISO 37001:2025 standard for Anti-Bribery Management Systems (ABMS). It's designed to help auditors and compliance professionals conduct gap analyses, perform internal audits, and prepare for certification. The goal is to transform the static standard into a practical tool you can use for your daily work.</p>
+                        <p>All data you enter is automatically saved to a secure database under your unique User ID. This means your work is preserved and private to you.</p>
+                        <p>The dashboard below provides multiple views of your audit progress, updating in real-time as you complete the checklist.</p>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8 items-start">
+                         <div class="bg-white p-6 rounded-lg shadow-sm">
+                            <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">Audit Findings Summary</h3>
+                            <div class="chart-container h-64">
+                                <canvas id="progressChart"></canvas>
                             </div>
-                            <div>
-                                <h3 class="text-2xl font-semibold text-slate-800 mb-3">Appendix B: Master List of Required Documents</h3>
-                                <div class="bg-white p-4 rounded-lg shadow-sm overflow-hidden">
-                                    <div class="table-wrapper">
-                                        <table class="min-w-full divide-y divide-slate-200">
-                                            <thead class="bg-slate-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Clause</th><th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Required Documented Information</th><th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Type</th></tr></thead>
-                                            <tbody class="bg-white divide-y divide-slate-200">
-                                                <tr><td class="px-6 py-4">4.3</td><td class="px-6 py-4">The scope of the ABMS.</td><td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Maintain</span></td></tr>
-                                                <tr><td class="px-6 py-4">4.5</td><td class="px-6 py-4">The bribery risk assessment.</td><td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Retain</span></td></tr>
-                                                <tr><td class="px-6 py-4">5.2</td><td class="px-6 py-4">The anti-bribery policy.</td><td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Maintain</span></td></tr>
-                                                <tr><td class="px-6 py-4">6.2</td><td class="px-6 py-4">The anti-bribery objectives.</td><td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Retain</span></td></tr>
-                                                <tr><td class="px-6 py-4">7.2</td><td class="px-6 py-4">Appropriate evidence of competence.</td><td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Retain</span></td></tr>
-                                                <tr><td class="px-6 py-4">8.2</td><td class="px-6 py-4">The due diligence undertaken.</td><td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Retain</span></td></tr>
-                                                <tr><td class="px-6 py-4">9.2</td><td class="px-6 py-4">Audit programme and results.</td><td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Retain</span></td></tr>
-                                                <tr><td class="px-6 py-4">9.3.3</td><td class="px-6 py-4">Results of management reviews.</td><td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Retain</span></td></tr>
-                                                <tr><td class="px-6 py-4">10.2</td><td class="px-6 py-4">Nonconformities and corrective actions.</td><td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Retain</span></td></tr>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
+                         </div>
+                          <div class="bg-white p-6 rounded-lg shadow-sm">
+                            <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">Overall Conformity</h3>
+                            <div class="chart-container h-64">
+                                <canvas id="conformityChart"></canvas>
                             </div>
-                        </div>
-                    `
-                },
-            ];
-            
-            let complianceState = {};
-            let charts = {};
-
-            const mainContent = document.getElementById('main-content');
-            const navLinksContainer = document.getElementById('nav-links');
-
-            function render() {
-                mainContent.innerHTML = '';
-                navLinksContainer.innerHTML = '';
-
-                auditData.forEach(section => {
-                    const navLink = document.createElement('li');
-                    navLink.innerHTML = `<a href="#" data-id="${section.id}" class="sidebar-link block p-3 px-4 text-sm text-slate-600">${section.title}</a>`;
-                    navLinksContainer.appendChild(navLink);
-
-                    const sectionDiv = document.createElement('div');
-                    sectionDiv.id = section.id;
-                    sectionDiv.className = 'content-section hidden';
-
-                    if (section.content) {
-                        sectionDiv.innerHTML = section.content;
-                    } else {
-                        let checklistHtml = `
-                            <h2 class="text-3xl font-bold text-slate-800 mb-2">Clause ${section.title}</h2>
-                            <p class="mb-6 text-slate-600">${section.overview}</p>
-                            <div class="bg-white rounded-lg shadow-sm overflow-hidden">
-                                <div class="table-wrapper">
-                                    <table class="min-w-full divide-y divide-slate-200">
-                                        <thead class="bg-slate-50">
-                                            <tr>
-                                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-1/12">Ref</th>
-                                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-4/12">Requirement & Questions</th>
-                                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-4/12">Evidence / Verification</th>
-                                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-1/12">Status</th>
-                                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-2/12">Auditor's Notes</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody class="bg-white divide-y divide-slate-200">
-                                            ${section.checklist.map((item, index) => {
-                                                const complianceId = `${section.id}-${index}`;
-                                                complianceState[complianceId] = complianceState[complianceId] || { status: 'NA', notes: '' };
-                                                
-                                                return `
-                                                    <tr>
-                                                        <td class="px-4 py-4 align-top font-semibold text-slate-700">${item.ref}</td>
-                                                        <td class="px-4 py-4 align-top">
-                                                            <p class="font-semibold text-slate-800">${item.req}</p>
-                                                            <ul class="mt-2 list-disc list-inside text-sm text-slate-600 space-y-1">${item.q.map(q => `<li>${q}</li>`).join('')}</ul>
-                                                        </td>
-                                                        <td class="px-4 py-4 align-top">
-                                                            <ul class="list-disc list-inside text-sm text-slate-600 space-y-1">${item.evidence.map(e => `<li>${e}</li>`).join('')}</ul>
-                                                        </td>
-                                                        <td class="px-4 py-4 align-top">
-                                                            <select data-id="${complianceId}" class="status-select mt-1 block w-full pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
-                                                                <option ${complianceState[complianceId].status === 'NA' ? 'selected' : ''}>N/A</option>
-                                                                <option ${complianceState[complianceId].status === 'C' ? 'selected' : ''}>C</option>
-                                                                <option ${complianceState[complianceId].status === 'NC' ? 'selected' : ''}>NC</option>
-                                                                <option ${complianceState[complianceId].status === 'OFI' ? 'selected' : ''}>OFI</option>
-                                                            </select>
-                                                        </td>
-                                                        <td class="px-4 py-4 align-top">
-                                                            <textarea data-id="${complianceId}" class="notes-input mt-1 block w-full text-sm border-slate-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" rows="4">${complianceState[complianceId].notes}</textarea>
-                                                        </td>
-                                                    </tr>
-                                                `;
-                                            }).join('')}
-                                        </tbody>
-                                    </table>
-                                </div>
+                         </div>
+                         <div class="bg-white p-6 rounded-lg shadow-sm lg:col-span-2">
+                            <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">Status by Clause</h3>
+                           <div class="chart-container">
+                                <canvas id="statusByClauseChart"></canvas>
                             </div>
-                        `;
-                        sectionDiv.innerHTML = checklistHtml;
-                    }
-                    mainContent.appendChild(sectionDiv);
-                });
+                         </div>
+                         <div class="bg-white p-6 rounded-lg shadow-sm lg:col-span-2">
+                            <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">PDCA Cycle Structure</h3>
+                           <div class="chart-container">
+                                <canvas id="pdcaChart"></canvas>
+                            </div>
+                         </div>
+                    </div>
+                `
+            },
+            { id: 'clause-4', title: '4. Context', overview: `This clause forms the strategic foundation of the entire ABMS. It compels an organization to understand its operating environment, defining *why* the ABMS is needed and *what* it must address.`, checklist: [ { ref: '4.1', req: 'Understanding the organization and its context', q: ['1. What process has been used to determine the relevant external and internal issues (e.g., PESTEL, SWOT analysis)?', '2. How are these issues monitored and reviewed for changes?', '3. **(ISO 37001:2025)** Show me the documented analysis where the organization determined whether climate change is a relevant issue for its ABMS. How was this conclusion reached?'], evidence: ['- Documented analysis of internal/external issues (e.g., PESTEL, SWOT reports).', '- Management review minutes where context is discussed.', '- Risk assessment registers.', '- Documented evaluation of climate change relevance.'] }, { ref: '4.2', req: 'Understanding the needs and expectations of interested parties', q: ['1. Who are the identified interested parties (stakeholders) for the ABMS?', '2. How were their needs and expectations (requirements) identified?', '3. **(ISO 37001:2025)** Have the requirements of interested parties concerning climate change been considered?'], evidence: ['- List or register of interested parties and their requirements.', '- Records of communication with stakeholders.', '- Compliance obligations register.'] }, { ref: '4.3', req: 'Determining the scope of the ABMS', q: ['1. How was the scope of the ABMS determined?', '2. Does the scope statement clearly define the boundaries (e.g., locations, departments, processes) and applicability?', '3. How is the scope documented and made available?'], evidence: ['- The documented Scope Statement of the ABMS.', '- ABMS Manual or equivalent top-level document.', '- Verification that the scope considers the outputs of 4.1, 4.2, and 4.5.'] }, { ref: '4.4', req: 'Anti-bribery management system', q: ['1. How has the organization defined the processes of the ABMS and their interactions?', '2. Provide an overview of the ABMS structure (e.g., manual, process maps).', '3. How is the system reviewed and improved?'], evidence: ['- ABMS Manual.', '- Process flow charts.', '- Records of management reviews and internal audits.', '- Evidence of the PDCA cycle in action.'] }, { ref: '4.5', req: 'Bribery risk assessment', q: ['1. What is the methodology for the bribery risk assessment? How are risks identified, analyzed, and evaluated?', '2. How does the assessment evaluate the effectiveness of existing controls?', '3. At what frequency is the risk assessment conducted and reviewed?', '4. How does the assessment consider risks from all required sources?'], evidence: ['- Bribery Risk Management Procedure.', '- Completed Bribery Risk Assessment forms/sheets.', '- Evidence that the assessment is regularly updated.', '- Management review minutes discussing risk assessment results.'] } ] },
+            { id: 'clause-5', title: '5. Leadership', overview: `Leadership commitment is the absolute cornerstone of an effective ABMS. This clause demands active engagement and accountability from the governing body and top management.`, checklist: [ { ref: '5.1.1', req: 'Leadership and commitment (Governing Body)', q: ['1. How does the governing body (e.g., Board of Directors) exercise oversight of the ABMS?', '2. Show evidence that the governing body has approved the anti-bribery policy.', '3. How does the governing body receive and review information on the ABMS performance?'], evidence: ['- Minutes of board or committee meetings.', '- Formal resolution approving the policy.', '- Reports submitted to the governing body.'] }, { ref: '5.1.2', req: 'Leadership and commitment (Top Management)', q: ['1. How does top management ensure the ABMS is integrated into business processes?', '2. How does top management promote a culture of integrity and reporting without fear of reprisal?', '3. How are adequate resources for the ABMS ensured and allocated?'], evidence: ['- Management review meeting minutes.', '- Evidence of resource allocation (budgets, staffing).', '- Internal communications from leadership.'] }, { ref: '5.1.3', req: 'Anti-bribery culture (New in 2025)', q: ['1. What specific actions has leadership taken to actively promote an anti-bribery culture?', '2. How is the effectiveness of these cultural initiatives measured?', '3. How are ethical behaviors recognized and breaches handled consistently?'], evidence: ['- Communication plans.', '- Employee surveys on ethics.', '- Performance management criteria.', '- HR disciplinary records.', '- Whistleblower log analysis.'] }, { ref: '5.2', req: 'Anti-bribery policy', q: ['1. Does the policy contain all required elements?', '2. How is the policy communicated to all personnel?', '3. How is the policy made available to business associates?'], evidence: ['- The documented Anti-Bribery Policy.', '- Evidence of communication (training records, acknowledgements).', '- Contractual clauses referencing the policy.'] }, { ref: '5.3.2', req: 'Anti-bribery compliance function', q: ['1. Who is assigned to the anti-bribery compliance function? What are their qualifications?', '2. How is the independence and authority of this function ensured?', '3. Demonstrate direct access to the governing body/top management.'], evidence: ['- Job description and competence records.', '- Organizational chart.', '- Charter for the compliance function.', '- Minutes/records of reports to leadership.'] }, { ref: '5.3.3', req: 'Delegated decision-making', q: ['1. Is there a documented process for delegating decision-making authority?', '2. How does this process manage conflicts of interest?', '3. How is the process reviewed for effectiveness?'], evidence: ['- Documented procedure for delegated authority.', '- Records of decisions made.', '- Conflict of interest declarations.'] } ] },
+            { id: 'clause-6', title: '6. Planning', overview: `This clause translates strategic analysis into a concrete plan of action. It involves setting clear objectives and formalizing actions to address identified bribery risks.`, checklist: [ { ref: '6.1', req: 'Actions to address risks and opportunities', q: ['1. For high-priority risks, show me the corresponding planned actions.', '2. How are these actions integrated into the ABMS processes?', '3. What is the process for evaluating the effectiveness of these actions?'], evidence: ['- Risk and Opportunity Register.', '- Action plans linked to risks.', '- Project plans for new controls.', '- Management review minutes.'] }, { ref: '6.2', req: 'Anti-bribery objectives and planning', q: ['1. Are the anti-bribery objectives documented and communicated?', '2. Are objectives consistent with the policy and risk assessment?', '3. Are the objectives measurable and monitored?', '4. What is the plan to achieve them (what, who, when, resources)?'], evidence: ['- Documented objectives.', '- Objectives Monitoring Sheet.', '- Action plans for achieving objectives.'] }, { ref: '6.3', req: 'Planning of changes (New in 2025)', q: ['1. What is the process for managing changes to the ABMS?', '2. How are potential consequences and ABMS integrity considered during changes?', '3. How are resources and responsibilities allocated for changes?'], evidence: ['- Change Management Procedure.', '- Change Request forms.', '- Records of changes implemented.'] } ] },
+            { id: 'clause-7', title: '7. Support', overview: `This clause covers the resources, competence, awareness, communication, and documented information required for the ABMS to function.`, checklist: [ { ref: '7.1', req: 'Resources', q: ['1. How are ABMS resource needs determined?', '2. Provide evidence of sufficient resources (personnel, financial, tech).', '3. Is the compliance function adequately resourced?'], evidence: ['- Budgets.', '- Staffing plans.', '- Evidence of tech investment.', '- Management review minutes.'] }, { ref: '7.2.1', req: 'Competence (General)', q: ['1. How are competence requirements for key roles determined?', '2. What happens if a person is not competent?', '3. Show documented evidence of competence for high-risk roles.'], evidence: ['- Job descriptions/skill matrices.', '- Training records, certifications.', '- Performance appraisals.'] }, { ref: '7.2.2', req: 'Competence (Employment process)', q: ['1. What due diligence is performed on new hires?', '2. How are incentive schemes reviewed to prevent encouraging bribery?', '3. What is the process for managing conflicts of interest?'], evidence: ['- HR recruitment procedures.', '- Background check reports.', '- Compensation policies.', '- Conflict of Interest forms.'] }, { ref: '7.3', req: 'Awareness and Training', q: ['1. What is the content of awareness and training programs?', '2. How is training tailored to different risk roles?', '3. What training is provided to business associates?', '4. How is training effectiveness evaluated?'], evidence: ['- Training materials.', '- Attendance records.', '- Post-training assessments.'] }, { ref: '7.4', req: 'Communication', q: ['1. What is the communication plan for the ABMS?', '2. How are internal stakeholders kept informed?', '3. What is communicated externally about the anti-bribery stance?'], evidence: ['- Communication Plan.', '- Internal newsletters.', '- Supplier code of conduct.'] }, { ref: '7.5', req: 'Documented information', q: ['1. Is there a procedure for controlling documented information?', '2. How are documents identified, approved, and version controlled?', '3. How is information protected?', '4. What are the retention and disposition processes?'], evidence: ['- Document Control Procedure.', '- Master List of Documents.', '- Review of sample documents for control.', '- Check of system access controls.'] } ] },
+            { id: 'clause-8', title: '8. Operation', overview: `This is where plans become day-to-day actions. It's the heart of the "Do" phase, covering due diligence, financial and non-financial controls, gifts, and investigations.`, checklist: [ { ref: '8.1', req: 'Operational planning and control', q: ['1. How are operational processes (e.g., procurement) controlled to prevent bribery?', '2. What criteria are established for these processes?', '3. How is it ensured processes are carried out as planned?'], evidence: ['- Process flow charts.', '- Documented procedures.', '- Checklists or work instructions.'] }, { ref: '8.2', req: 'Due diligence', q: ['1. What is the due diligence procedure?', '2. How does it define different levels of diligence based on risk?', '3. Show examples for a high-risk and low-risk business associate.', '4. How are findings used in decision-making?'], evidence: ['- Due Diligence Procedure.', '- Completed due diligence reports.', '- Records of decisions based on due diligence.'] }, { ref: '8.3', req: 'Financial controls', q: ['1. What financial controls are in place (e.g., segregation of duties)?', '2. How are controls documented and communicated?', '3. How are high-risk payments controlled?'], evidence: ['- Financial procedures.', '- Delegation of Authority matrix.', '- Sample of payment records.'] }, { ref: '8.4', req: 'Non-financial controls', q: ['1. What non-financial controls are in place?', '2. **(ISO 37001:2025)** What specific controls manage bribery risks during M&A?'], evidence: ['- Procurement procedures.', '- Sales procedures.', '- M&A due diligence reports.', '- HR procedures.'] }, { ref: '8.5', req: 'Controls by controlled organizations/associates', q: ['1. How does the organization ensure subsidiaries implement controls?', '2. What steps ensure high-risk associates have controls (e.g., contractual requirements)?'], evidence: ['- Anti-bribery clauses in contracts.', '- Supplier Code of Conduct.', '- Results of business associate audits.'] }, { ref: '8.6', req: 'Anti-bribery commitments', q: ['1. How are commitments obtained from personnel?', '2. How are commitments obtained from business associates?'], evidence: ['- Signed employment contracts.', '- Signed declarations from associates.'] }, { ref: '8.7', req: 'Gifts, hospitality, donations', q: ['1. What is the policy and procedure?', '2. What are the approval thresholds?', '3. How are these items recorded and monitored?'], evidence: ['- Gifts & Hospitality Policy.', '- Register/log of gifts.', '- Approval forms.'] }, { ref: '8.8', req: 'Managing inadequacy of controls', q: ['1. What is the process if an associate refuses to agree to controls?', '2. What happens if a transaction violates policy?', '3. Show records of how such an inadequacy was managed.'], evidence: ['- Documented procedure.', '- Records of suspended relationships.', '- Risk assessments for proceeding.'] }, { ref: '8.9', req: 'Raising concerns', q: ['1. What channels are available for whistleblowing?', '2. How is confidentiality/anonymity ensured?', '3. How is the non-retaliation policy enforced?'], evidence: ['- Whistleblowing Procedure.', '- Communication promoting channels.', '- Interviews with staff.'] }, { ref: '8.10', req: 'Investigating and dealing with bribery', q: ['1. What is the investigation procedure?', '2. How is investigator objectivity ensured?', '3. How are results used to take action?'], evidence: ['- Investigation Procedure.', '- Sample Investigation Reports.', '- Evidence of disciplinary actions.', '- Link to corrective actions.'] } ] },
+            { id: 'clause-9', title: '9. Performance Evaluation', overview: `This is the "Check" phase, where the organization systematically measures and reviews ABMS performance.`, checklist: [ { ref: '9.1', req: 'Monitoring, measurement, analysis and evaluation', q: ['1. What KPIs are used to monitor the ABMS?', '2. How are metrics analyzed to evaluate effectiveness?', '3. Show reports demonstrating this analysis.'], evidence: ['- List of KPIs.', '- Performance dashboards.', '- Analysis in review meetings.'] }, { ref: '9.2', req: 'Internal audit', q: ['1. Is there a documented internal audit procedure?', '2. Show the audit programme. How is frequency determined?', '3. How is auditor competence and impartiality ensured?', '4. Review a sample of audit reports and nonconformities.'], evidence: ['- Internal Audit Procedure.', '- Audit Plan/Schedule.', '- Competence records for auditors.', '- Completed Audit Reports.'] }, { ref: '9.3', req: 'Management review', q: ['1. How frequently are management reviews conducted?', '2. Do reviews cover all mandatory inputs?', '3. What are the outputs? Show decisions on improvements.'], evidence: ['- Management Review Procedure.', '- Management Review minutes.', '- Action plans from the review.'] }, { ref: '9.4', req: 'Review by anti-bribery function', q: ['1. Is there a documented process for this review?', '2. How frequently does it occur?', '3. Does it cover its specific inputs?', '4. Show reports from this review submitted to leadership.'], evidence: ['- Documented procedure for the review.', '- The function\'s review report.', '- Records showing delivery to leadership.'] } ] },
+            { id: 'clause-10', title: '10. Improvement', overview: `The "Act" phase focuses on learning, correcting deficiencies, and strengthening the ABMS over time.`, checklist: [ { ref: '10.1', req: 'Continual improvement', q: ['1. How are improvement opportunities identified?', '2. Provide examples of recent improvements.', '3. How are Clause 9 outputs used to drive improvement?'], evidence: ['- Management review outputs.', '- Corrective action reports.', '- Updated procedures.', '- Improvement log.'] }, { ref: '10.2', req: 'Nonconformity and corrective action', q: ['1. What is the procedure for managing nonconformities?', '2. For a sample nonconformity, show the correction.', '3. Show the root cause analysis performed.', '4. What was the corrective action, and how was its effectiveness verified?'], evidence: ['- Corrective Action Procedure.', '- Corrective Action Reports (CARs).', '- Evidence of root cause analysis.', '- Records of verification of effectiveness.'] } ] },
+            { id: 'appendices', title: 'Appendices', content: ` <div class="space-y-8"> <div> <h3 class="text-2xl font-semibold text-slate-800 mb-3">Appendix A: Glossary</h3> <div class="space-y-4 text-slate-600"> <details class="bg-white p-4 rounded-lg shadow-sm cursor-pointer"><summary class="font-semibold">Anti-bribery Compliance Function</summary><p class="mt-2">Person(s) with responsibility and authority for the operation of the ABMS. Must have competence, status, authority, and independence, with direct access to the governing body and top management.</p></details> <details class="bg-white p-4 rounded-lg shadow-sm cursor-pointer"><summary class="font-semibold">Bribery</summary><p class="mt-2">Offering, promising, giving, accepting, or soliciting of an undue advantage of any value, directly or indirectly, in violation of applicable law, as an inducement or reward for a person acting or refraining from acting in relation to their duties.</p></details> <details class="bg-white p-4 rounded-lg shadow-sm cursor-pointer"><summary class="font-semibold">Business Associate</summary><p class="mt-2">An external party with whom the organization has, or plans to establish, some form of business relationship (e.g., clients, agents, suppliers, contractors).</p></details> <details class="bg-white p-4 rounded-lg shadow-sm cursor-pointer"><summary class="font-semibold">Due Diligence</summary><p class="mt-2">The process of assessing in greater detail the nature and extent of the bribery risk to help the organization make decisions regarding a specific transaction, project, or relationship.</p></details> <details class="bg-white p-4 rounded-lg shadow-sm cursor-pointer"><summary class="font-semibold">Governing Body</summary><p class="mt-2">The group or body with ultimate responsibility and authority for an organization’s activities, governance, and policies (e.g., Board of Directors). Not all organizations have one.</p></details> </div> </div> <div> <h3 class="text-2xl font-semibold text-slate-800 mb-3">Appendix B: Master List of Required Documents</h3> <div class="bg-white p-4 rounded-lg shadow-sm overflow-hidden"> <div class="table-wrapper"> <table class="min-w-full divide-y divide-slate-200"> <thead class="bg-slate-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Clause</th><th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Required Documented Information</th><th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Type</th></tr></thead> <tbody class="bg-white divide-y divide-slate-200"> <tr><td class="px-6 py-4">4.3</td><td class="px-6 py-4">The scope of the ABMS.</td><td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Maintain</span></td></tr> <tr><td class="px-6 py-4">4.5</td><td class="px-6 py-4">The bribery risk assessment.</td><td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Retain</span></td></tr> <tr><td class="px-6 py-4">5.2</td><td class="px-6 py-4">The anti-bribery policy.</td><td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Maintain</span></td></tr> <tr><td class="px-6 py-4">6.2</td><td class="px-6 py-4">The anti-bribery objectives.</td><td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Retain</span></td></tr> <tr><td class="px-6 py-4">7.2</td><td class="px-6 py-4">Appropriate evidence of competence.</td><td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Retain</span></td></tr> <tr><td class="px-6 py-4">8.2</td><td class="px-6 py-4">The due diligence undertaken.</td><td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Retain</span></td></tr> <tr><td class="px-6 py-4">9.2</td><td class="px-6 py-4">Audit programme and results.</td><td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Retain</span></td></tr> <tr><td class="px-6 py-4">9.3.3</td><td class="px-6 py-4">Results of management reviews.</td><td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Retain</span></td></tr> <tr><td class="px-6 py-4">10.2</td><td class="px-6 py-4">Nonconformities and corrective actions.</td><td class="px-6 py-4"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Retain</span></td></tr> </tbody> </table> </div> </div> </div> </div> ` }
+        ];
 
-                attachEventListeners();
-                showSection('intro');
+        let complianceState = {};
+        let charts = {};
+        let userId = null;
+        let dbRef = null;
+        let unsubscribe = null;
+
+        const mainContent = document.getElementById('main-content');
+        const navLinksContainer = document.getElementById('nav-links');
+        const userIdDisplay = document.getElementById('user-id-display');
+        const exportPdfBtn = document.getElementById('export-pdf-btn');
+        const pdfLoader = document.getElementById('pdf-export-loader');
+
+        // --- Authentication ---
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                userIdDisplay.textContent = userId;
+                dbRef = doc(db, `artifacts/${appId}/users/${userId}/iso37001-audit/state`);
+                setupRealtimeListener();
+            } else {
+                console.log("No user signed in.");
+                userIdDisplay.textContent = 'Not signed in.';
             }
-            
-            function showSection(id) {
-                document.querySelectorAll('.content-section').forEach(s => s.classList.add('hidden'));
-                document.getElementById(id).classList.remove('hidden');
-
-                document.querySelectorAll('#nav-links a').forEach(a => {
-                    a.classList.remove('active');
-                    if (a.dataset.id === id) {
-                        a.classList.add('active');
-                    }
-                });
-
-                if (id === 'intro') {
-                    initCharts();
+        });
+        
+        async function signIn() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
                 }
+            } catch(error) {
+                console.error("Authentication error:", error);
+                userIdDisplay.textContent = 'Auth Failed';
             }
+        }
 
-            function updateComplianceState(id, key, value) {
-                complianceState[id][key] = value;
-                updateProgressChart();
-            }
-            
-            function attachEventListeners() {
-                navLinksContainer.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    if (e.target.tagName === 'A') {
-                        showSection(e.target.dataset.id);
-                    }
+        // --- Firestore Realtime Listener ---
+        function setupRealtimeListener() {
+            if (unsubscribe) unsubscribe(); // Unsubscribe from previous listener if exists
+
+            unsubscribe = onSnapshot(dbRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    complianceState = docSnap.data();
+                } else {
+                    console.log("No such document! Initializing state.");
+                    initializeState();
+                    setDoc(dbRef, complianceState);
+                }
+                render(); // Re-render the UI with the new state
+            }, (error) => {
+                console.error("Firestore snapshot error:", error);
+            });
+        }
+
+        // --- State Management ---
+        function initializeState() {
+            const initialState = {};
+            auditData.forEach(section => {
+                if(section.checklist) {
+                    section.checklist.forEach((item, index) => {
+                        const complianceId = `${section.id}-${index}`;
+                        initialState[complianceId] = { status: 'NA', notes: '' };
+                    });
+                }
+            });
+            complianceState = initialState;
+        }
+
+        async function updateComplianceState(id, key, value) {
+            if(complianceState[id]){
+                const fieldPath = `${id}.${key}`;
+                await updateDoc(dbRef, { [fieldPath]: value }).catch(error => {
+                     console.error("Error updating document: ", error);
                 });
+                // The onSnapshot listener will handle re-rendering automatically
+            }
+        }
 
-                mainContent.addEventListener('change', (e) => {
-                    if (e.target.classList.contains('status-select')) {
-                        updateComplianceState(e.target.dataset.id, 'status', e.target.value);
-                    }
-                    if (e.target.classList.contains('notes-input')) {
-                        updateComplianceState(e.target.dataset.id, 'notes', e.target.value);
-                    }
-                });
+        // --- Rendering ---
+        function render() {
+            mainContent.innerHTML = '';
+            navLinksContainer.innerHTML = '';
+
+            auditData.forEach(section => {
+                const navLink = document.createElement('li');
+                navLink.innerHTML = `<a href="#" data-id="${section.id}" class="sidebar-link block p-3 px-4 text-sm text-slate-600">${section.title}</a>`;
+                navLinksContainer.appendChild(navLink);
+
+                const sectionDiv = document.createElement('div');
+                sectionDiv.id = section.id;
+                sectionDiv.className = 'content-section hidden';
+
+                if (section.content) {
+                    sectionDiv.innerHTML = section.content;
+                } else {
+                    let checklistHtml = `
+                        <h2 class="text-3xl font-bold text-slate-800 mb-2">Clause ${section.title}</h2>
+                        <p class="mb-6 text-slate-600">${section.overview}</p>
+                        <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+                            <div class="table-wrapper">
+                                <table class="min-w-full divide-y divide-slate-200">
+                                    <thead class="bg-slate-50">
+                                        <tr>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-1/12">Ref</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-4/12">Requirement & Questions</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-3/12">Evidence / Verification</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-1/12">Status</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-3/12">Auditor's Notes</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-slate-200">
+                                        ${section.checklist.map((item, index) => {
+                                            const complianceId = `${section.id}-${index}`;
+                                            const currentItemState = complianceState[complianceId] || { status: 'NA', notes: '' };
+
+                                            return `
+                                                <tr>
+                                                    <td class="px-4 py-4 align-top font-semibold text-slate-700">${item.ref}</td>
+                                                    <td class="px-4 py-4 align-top">
+                                                        <p class="font-semibold text-slate-800">${item.req}</p>
+                                                        <ul class="mt-2 list-disc list-inside text-sm text-slate-600 space-y-1">${item.q.map(q => `<li>${q}</li>`).join('')}</ul>
+                                                    </td>
+                                                    <td class="px-4 py-4 align-top">
+                                                        <ul class="list-disc list-inside text-sm text-slate-600 space-y-1">${item.evidence.map(e => `<li>${e}</li>`).join('')}</ul>
+                                                    </td>
+                                                    <td class="px-4 py-4 align-top">
+                                                        <select data-id="${complianceId}" class="status-select mt-1 block w-full pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                                                            <option value="NA" ${currentItemState.status === 'NA' ? 'selected' : ''}>N/A</option>
+                                                            <option value="C" ${currentItemState.status === 'C' ? 'selected' : ''}>C</option>
+                                                            <option value="NC" ${currentItemState.status === 'NC' ? 'selected' : ''}>NC</option>
+                                                            <option value="OFI" ${currentItemState.status === 'OFI' ? 'selected' : ''}>OFI</option>
+                                                        </select>
+                                                    </td>
+                                                    <td class="px-4 py-4 align-top">
+                                                        <textarea data-id="${complianceId}" class="notes-input mt-1 block w-full text-sm border-slate-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" rows="4">${currentItemState.notes}</textarea>
+                                                    </td>
+                                                </tr>
+                                            `;
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                    sectionDiv.innerHTML = checklistHtml;
+                }
+                mainContent.appendChild(sectionDiv);
+            });
+
+            showSection(mainContent.querySelector('.content-section')?.id || 'intro');
+            updateAllCharts();
+        }
+
+        function showSection(id) {
+            document.querySelectorAll('.content-section').forEach(s => s.classList.add('hidden'));
+            const sectionToShow = document.getElementById(id);
+            if(sectionToShow) {
+                sectionToShow.classList.remove('hidden');
             }
 
-            function initCharts() {
-                if (charts.pdca) charts.pdca.destroy();
-                const pdcaCtx = document.getElementById('pdcaChart').getContext('2d');
+            document.querySelectorAll('#nav-links a').forEach(a => {
+                a.classList.remove('active');
+                if (a.dataset.id === id) {
+                    a.classList.add('active');
+                }
+            });
+
+            if (id === 'intro') {
+                initCharts();
+            }
+        }
+        
+        // --- Event Listeners ---
+        function attachEventListeners() {
+            navLinksContainer.addEventListener('click', (e) => {
+                e.preventDefault();
+                const link = e.target.closest('a');
+                if (link) {
+                    showSection(link.dataset.id);
+                }
+            });
+
+            mainContent.addEventListener('input', (e) => {
+                if (e.target.classList.contains('status-select')) {
+                    updateComplianceState(e.target.dataset.id, 'status', e.target.value);
+                }
+                if (e.target.classList.contains('notes-input')) {
+                    updateComplianceState(e.target.dataset.id, 'notes', e.target.value);
+                }
+            });
+
+            exportPdfBtn.addEventListener('click', exportToPdf);
+        }
+
+        // --- Charting ---
+        function initCharts() {
+            Object.values(charts).forEach(chart => { if(chart) chart.destroy(); });
+
+            const pdcaCtx = document.getElementById('pdcaChart')?.getContext('2d');
+            if(pdcaCtx) {
                 charts.pdca = new Chart(pdcaCtx, {
                     type: 'doughnut',
-                    data: {
-                        labels: ['Plan (4, 5, 6)', 'Do (7, 8)', 'Check (9)', 'Act (10)'],
-                        datasets: [{
-                            label: 'PDCA Cycle',
-                            data: [3, 2, 1, 1],
-                            backgroundColor: ['#60a5fa', '#34d399', '#facc15', '#fb923c'],
-                            borderColor: '#ffffff',
-                            borderWidth: 4
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { position: 'top' },
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        let label = context.label || '';
-                                        if (label) {
-                                            label += ': ';
-                                        }
-                                        label += `${context.raw} Clauses`;
-                                        return label;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    data: { labels: ['Plan (Clauses 4, 5, 6)', 'Do (Clauses 7, 8)', 'Check (Clause 9)', 'Act (Clause 10)'], datasets: [{ label: 'PDCA Cycle', data: [3, 2, 1, 1], backgroundColor: ['#60a5fa', '#34d399', '#facc15', '#fb923c'], borderColor: '#ffffff', borderWidth: 4 }] },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }
                 });
-
-                updateProgressChart();
             }
+            updateAllCharts();
+        }
 
-            function updateProgressChart() {
-                const progressCtx = document.getElementById('progressChart')?.getContext('2d');
-                if (!progressCtx) return;
-
+        function updateAllCharts() {
+            if(!complianceState || Object.keys(complianceState).length === 0) return;
+            
+            // Chart 1: Overall Progress
+            const progressCtx = document.getElementById('progressChart')?.getContext('2d');
+            if (progressCtx) {
                 const counts = { C: 0, NC: 0, OFI: 0 };
-                Object.values(complianceState).forEach(item => {
-                    if (counts.hasOwnProperty(item.status)) {
-                        counts[item.status]++;
-                    }
-                });
-
+                Object.values(complianceState).forEach(item => { if (counts.hasOwnProperty(item.status)) counts[item.status]++; });
                 if (charts.progress) charts.progress.destroy();
-                charts.progress = new Chart(progressCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: ['Conformity (C)', 'Nonconformity (NC)', 'Opportunity (OFI)'],
-                        datasets: [{
-                            label: 'Audit Findings',
-                            data: [counts.C, counts.NC, counts.OFI],
-                            backgroundColor: ['#34d399', '#f87171', '#fbbf24'],
-                            borderColor: ['#10b981', '#ef4444', '#f59e0b'],
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        indexAxis: 'y',
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: { legend: { display: false } },
-                        scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
-                    }
-                });
+                charts.progress = new Chart(progressCtx, { type: 'bar', data: { labels: ['Conformity (C)', 'Nonconformity (NC)', 'Opportunity (OFI)'], datasets: [{ label: 'Audit Findings', data: [counts.C, counts.NC, counts.OFI], backgroundColor: ['#34d399', '#f87171', '#fbbf24'] }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { precision: 0 } } } } });
             }
 
-            render();
-        });
+            // Chart 2: Conformity Percentage
+            const conformityCtx = document.getElementById('conformityChart')?.getContext('2d');
+            if (conformityCtx) {
+                const applicableItems = Object.values(complianceState).filter(item => item.status !== 'NA');
+                const conformingItems = applicableItems.filter(item => item.status === 'C');
+                const conformityRate = applicableItems.length > 0 ? (conformingItems.length / applicableItems.length) * 100 : 0;
+                if (charts.conformity) charts.conformity.destroy();
+                charts.conformity = new Chart(conformityCtx, { type: 'doughnut', data: { labels: ['Conforming', 'Other'], datasets: [{ data: [conformityRate, 100 - conformityRate], backgroundColor: ['#34d399', '#e5e7eb'], borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { display: false }, tooltip: { enabled: false } } } });
+            }
+
+            // Chart 3: Status by Clause
+            const statusByClauseCtx = document.getElementById('statusByClauseChart')?.getContext('2d');
+            if (statusByClauseCtx) {
+                const clauseLabels = auditData.filter(s => s.checklist).map(s => s.title);
+                const clauseData = { C: [], NC: [], OFI: [] };
+                clauseLabels.forEach(label => {
+                    const clauseId = auditData.find(s => s.title === label).id;
+                    const clauseItems = Object.keys(complianceState).filter(k => k.startsWith(clauseId));
+                    const counts = { C: 0, NC: 0, OFI: 0 };
+                    clauseItems.forEach(itemKey => { const item = complianceState[itemKey]; if (counts.hasOwnProperty(item.status)) counts[item.status]++; });
+                    clauseData.C.push(counts.C); clauseData.NC.push(counts.NC); clauseData.OFI.push(counts.OFI);
+                });
+                if (charts.statusByClause) charts.statusByClause.destroy();
+                charts.statusByClause = new Chart(statusByClauseCtx, { type: 'bar', data: { labels: clauseLabels, datasets: [{ label: 'Conformity', data: clauseData.C, backgroundColor: '#34d399' }, { label: 'Nonconformity', data: clauseData.NC, backgroundColor: '#f87171' }, { label: 'Opportunity', data: clauseData.OFI, backgroundColor: '#fbbf24' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } } } });
+            }
+        }
+
+        // --- PDF Export ---
+        async function exportToPdf() {
+            pdfLoader.classList.remove('hidden');
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+            
+            const contentToExport = document.createElement('div');
+            document.body.appendChild(contentToExport);
+            
+            // Clone all content sections into a temporary container for rendering
+            const allSections = document.querySelectorAll('.content-section');
+            allSections.forEach(section => {
+                const clone = section.cloneNode(true);
+                clone.classList.remove('hidden');
+                clone.style.padding = '10mm'; // Add padding for PDF margins
+                contentToExport.appendChild(clone);
+            });
+            
+            try {
+                const canvas = await html2canvas(contentToExport, {
+                    scale: 2, // Improve image quality
+                    useCORS: true,
+                    windowWidth: contentToExport.scrollWidth,
+                    windowHeight: contentToExport.scrollHeight
+                });
+                
+                const imgData = canvas.toDataURL('image/png');
+                const imgWidth = 210; // A4 width in mm
+                const pageHeight = 295; // A4 height in mm
+                const imgHeight = canvas.height * imgWidth / canvas.width;
+                let heightLeft = imgHeight;
+                let position = 0;
+
+                pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                heightLeft -= pageHeight;
+
+                while (heightLeft >= 0) {
+                    position = heightLeft - imgHeight;
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                    heightLeft -= pageHeight;
+                }
+
+                pdf.save('ISO37001-Audit-Report.pdf');
+            } catch (error) {
+                console.error("Error generating PDF:", error);
+            } finally {
+                document.body.removeChild(contentToExport);
+                pdfLoader.classList.add('hidden');
+            }
+        }
+
+        // --- App Start ---
+        attachEventListeners();
+        await signIn();
+
     </script>
 </body>
 </html>
