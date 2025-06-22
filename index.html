@@ -108,31 +108,43 @@
         Created by Joshua Aritonang
     </footer>
 
+    <div id="auth-error-overlay" class="hidden fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center z-50 p-4">
+        <div class="bg-white p-8 rounded-lg shadow-2xl text-center max-w-lg">
+            <h2 class="text-2xl font-bold text-red-600 mb-4">Action Required: Authentication Failed</h2>
+            <p class="text-slate-700 mb-2">The Anonymous sign-in method is not enabled in your Firebase project.</p>
+            <p class="text-slate-600 font-medium">Please follow these steps to fix it:</p>
+            <ol class="text-left text-slate-600 list-decimal list-inside my-4 space-y-2">
+                <li>Go to your <a href="https://console.firebase.google.com/" target="_blank" class="text-blue-600 hover:underline font-semibold">Firebase Console</a>.</li>
+                <li>Select your project: <strong>iso-checklist</strong>.</li>
+                <li>In the left menu, go to <strong>Build > Authentication</strong>.</li>
+                <li>Click the <strong>Sign-in method</strong> tab.</li>
+                <li>Find <strong>Anonymous</strong> in the list, click the pencil icon, and enable it.</li>
+                <li>Click <strong>Save</strong> and then reload this page.</li>
+            </ol>
+        </div>
+    </div>
+
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-app.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, onSnapshot, updateDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         document.addEventListener('DOMContentLoaded', async () => {
-            // --- Firebase Configuration ---
-    const firebaseConfig = {
-        apiKey: "AIzaSyA2DLdoUxu28SC_mnvXLijeuzLrq0pNrX4",
-        authDomain: "iso-checklist.firebaseapp.com",
-        projectId: "iso-checklist",
-        storageBucket: "iso-checklist.firebasestorage.app",
-        messagingSenderId: "59632743020",
-        appId: "1:59632743020:web:615b43ac0132195e94de49"
-      };
-
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-</script>
-            }
+            // --- User's Firebase Configuration ---
+            const firebaseConfig = {
+                apiKey: "AIzaSyA2DLdoUxu28SC_mnvXLijeuzLrq0pNrX4",
+                authDomain: "iso-checklist.firebaseapp.com",
+                projectId: "iso-checklist",
+                storageBucket: "iso-checklist.appspot.com",
+                messagingSenderId: "59632743020",
+                appId: "1:59632743020:web:615b43ac0132195e94de49"
+            };
             
             // --- App Initialization ---
             const app = initializeApp(firebaseConfig);
             const auth = getAuth(app);
             const db = getFirestore(app);
+            const appId = firebaseConfig.projectId;
             
             const auditData = [
                 { id: 'intro', title: 'Introduction', content: `<h2 class="text-3xl font-bold text-slate-800 mb-4">Welcome to the Interactive ISO 37001 Checklist</h2> <div class="space-y-6 text-slate-600"> <p>This application provides a dynamic and interactive way to work with the ISO 37001:2025 standard for Anti-Bribery Management Systems (ABMS). It'sdesigned to help auditors and compliance professionals conduct gap analyses, perform internal audits, and prepare for certification. The goal is to transform the static standard into a practical tool you can use for your daily work.</p> <p>All data you enter is automatically saved to a secure database under your unique User ID. This means your work is preserved and private to you.</p> <p>The dashboard below provides multiple views of your audit progress, updating in real-time as you complete the checklist.</p> </div> <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8 items-start"> <div class="bg-white p-6 rounded-lg shadow-sm"> <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">Audit Findings Summary</h3> <div class="chart-container h-64"> <canvas id="progressChart"></canvas> </div> </div> <div class="bg-white p-6 rounded-lg shadow-sm"> <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">Overall Conformity</h3> <div class="chart-container h-64"> <canvas id="conformityChart"></canvas> </div> </div> <div class="bg-white p-6 rounded-lg shadow-sm lg:col-span-2"> <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">Status by Clause</h3> <div class="chart-container"> <canvas id="statusByClauseChart"></canvas> </div> </div> <div class="bg-white p-6 rounded-lg shadow-sm lg:col-span-2"> <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">PDCA Cycle Structure</h3> <div class="chart-container"> <canvas id="pdcaChart"></canvas> </div> </div> </div>` },
@@ -150,6 +162,7 @@
             const mainContent = document.getElementById('main-content');
             const navLinksContainer = document.getElementById('nav-links');
             const userIdDisplay = document.getElementById('user-id-display');
+            const authErrorOverlay = document.getElementById('auth-error-overlay');
 
             let complianceState = {};
             let charts = {};
@@ -160,26 +173,24 @@
             // --- Authentication ---
             onAuthStateChanged(auth, async (user) => {
                 if (user) {
+                    authErrorOverlay.classList.add('hidden');
                     userId = user.uid;
                     userIdDisplay.textContent = userId;
                     dbRef = doc(db, `artifacts/${appId}/users/${userId}/iso37001-audit/state`);
                     setupRealtimeListener();
-                } else {
-                    console.log("No user signed in.");
-                    userIdDisplay.textContent = 'Not signed in.';
                 }
             });
             
             async function signIn() {
                 try {
-                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                        await signInWithCustomToken(auth, __initial_auth_token);
-                    } else {
-                        await signInAnonymously(auth);
-                    }
+                     await signInAnonymously(auth);
                 } catch(error) {
                     console.error("Authentication error:", error);
-                    userIdDisplay.textContent = 'Auth Failed';
+                    if (error.code === 'auth/configuration-not-found') {
+                        authErrorOverlay.classList.remove('hidden');
+                    } else {
+                        userIdDisplay.textContent = 'Auth Failed';
+                    }
                 }
             }
 
