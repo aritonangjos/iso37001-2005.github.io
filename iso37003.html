@@ -53,8 +53,10 @@
             -webkit-overflow-scrolling: touch;
         }
         
-        td, th {
-            white-space: normal;
+        td, th { 
+            white-space: normal; 
+            padding: 1rem;
+            vertical-align: top;
         }
         
         .progress-bar-container {
@@ -103,8 +105,6 @@
     <div id="auth-error-overlay" class="hidden fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center z-50 p-4">
         <div class="bg-white p-8 rounded-lg shadow-2xl text-center max-w-lg">
             <h2 class="text-2xl font-bold text-red-600 mb-4">Action Required: Authentication Failed</h2>
-            <p class="text-slate-700 mb-2">The Anonymous sign-in method is not enabled in your Firebase project.</p>
-            <p class="text-slate-600 font-medium">Please follow these steps to fix it:</p>
             <ol class="text-left text-slate-600 list-decimal list-inside my-4 space-y-2">
                 <li>Go to your <a href="https://console.firebase.google.com/" target="_blank" class="text-blue-600 hover:underline font-semibold">Firebase Console</a>.</li>
                 <li>Select your project: <strong>iso-checklist</strong>.</li>
@@ -155,65 +155,30 @@
             const navLinksContainer = document.getElementById('nav-links');
             const userIdDisplay = document.getElementById('user-id-display');
             const authErrorOverlay = document.getElementById('auth-error-overlay');
+            let complianceState = {}, charts = {}, userId = null, dbRef = null, unsubscribe = null;
 
-            let complianceState = {};
-            let charts = {};
-            let userId = null;
-            let dbRef = null;
-            let unsubscribe = null;
+            // --- Function Declarations ---
 
-            // --- Authentication ---
-            onAuthStateChanged(auth, async (user) => {
-                if (user) {
-                    authErrorOverlay.classList.add('hidden');
-                    userId = user.uid;
-                    userIdDisplay.textContent = userId;
-                    dbRef = doc(db, `artifacts/${appId}/users/${userId}/iso37003-audit/state`);
-                    setupRealtimeListener();
-                }
-            });
-            
             async function signIn() {
-                try {
-                     await signInAnonymously(auth);
-                } catch(error) {
+                try { await signInAnonymously(auth); } catch(error) {
                     console.error("Authentication error:", error);
-                    if (error.code === 'auth/configuration-not-found') {
-                        authErrorOverlay.classList.remove('hidden');
-                    } else {
-                        userIdDisplay.textContent = 'Auth Failed';
-                    }
+                    if (error.code === 'auth/configuration-not-found') authErrorOverlay.classList.remove('hidden');
+                    else userIdDisplay.textContent = 'Auth Failed';
                 }
             }
 
-            // --- Firestore Realtime Listener ---
             function setupRealtimeListener() {
                 if (unsubscribe) unsubscribe(); 
-
-                unsubscribe = onSnapshot(dbRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        complianceState = docSnap.data();
-                    } else {
-                        initializeState();
-                        setDoc(dbRef, complianceState);
-                    }
+                unsubscribe = onSnapshot(dbRef, docSnap => {
+                    if (docSnap.exists()) complianceState = docSnap.data();
+                    else { initializeState(); setDoc(dbRef, complianceState); }
                     render(); 
-                }, (error) => {
-                    console.error("Firestore snapshot error:", error);
-                });
+                }, console.error);
             }
 
-            // --- State Management ---
             function initializeState() {
                 const initialState = {};
-                auditData.forEach(section => {
-                    if(section.checklist) {
-                        section.checklist.forEach((item, index) => {
-                            const complianceId = `${section.id}-${index}`;
-                            initialState[complianceId] = { status: 'NA', notes: '' };
-                        });
-                    }
-                });
+                auditData.forEach(s => s.checklist?.forEach((item, i) => initialState[`${s.id}-${i}`] = { status: 'NA', notes: '' }));
                 complianceState = initialState;
             }
 
@@ -229,107 +194,45 @@
             
             async function saveClauseData(clauseId) {
                 const clauseInputs = document.querySelectorAll(`#${clauseId} [data-id]`);
-                if (clauseInputs.length === 0 || !dbRef) return;
-
+                if (!clauseInputs.length || !dbRef) return;
                 const batch = writeBatch(db);
                 clauseInputs.forEach(input => {
-                    const id = input.dataset.id;
-                    const key = input.classList.contains('status-select') ? 'status' : 'notes';
+                    const id = input.dataset.id, key = input.matches('.status-select') ? 'status' : 'notes';
                     batch.update(dbRef, { [`${id}.${key}`]: input.value });
                     if(complianceState[id]) complianceState[id][key] = input.value;
                 });
-
                 await batch.commit();
                 updateAllCharts();
             }
 
-
-            // --- Rendering ---
             function render() {
-                const activeSectionId = document.querySelector('.sidebar-link.active')?.dataset.id || 'intro';
+                const activeId = document.querySelector('.sidebar-link.active')?.dataset.id || 'intro';
                 mainContent.innerHTML = '';
                 navLinksContainer.innerHTML = '';
-
                 auditData.forEach(section => {
-                    const navLink = document.createElement('li');
-                    navLink.innerHTML = `<a href="#" data-id="${section.id}" class="sidebar-link block p-3 px-4 text-sm rounded-md">${section.title}</a>`;
-                    navLinksContainer.appendChild(navLink);
-
-                    const sectionDiv = document.createElement('div');
-                    sectionDiv.id = section.id;
-                    sectionDiv.className = 'content-section'; 
-
-                    if (section.id !== activeSectionId) {
-                        sectionDiv.classList.add('hidden');
-                    }
-
+                    navLinksContainer.innerHTML += `<a href="#" data-id="${section.id}" class="sidebar-link block p-3 px-4 text-sm rounded-md">${section.title}</a>`;
+                    const div = document.createElement('div');
+                    div.id = section.id;
+                    div.className = `content-section ${section.id !== activeId ? 'hidden' : ''}`;
                     if (section.content) {
-                        sectionDiv.innerHTML = section.content;
+                        div.innerHTML = section.content;
                     } else {
-                        const totalItems = section.checklist.length;
-                        const completedItems = section.checklist.filter((_, index) => (complianceState[`${section.id}-${index}`] || {}).status !== 'NA').length;
-                        const progressPercentage = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
-
-                        sectionDiv.innerHTML = `
-                            <h2 class="text-3xl font-bold text-slate-800 mb-2">Clause ${section.title}</h2>
-                            <p class="mb-4 text-slate-600">${section.overview}</p>
-                            <div class="mb-6">
-                                <div class="flex justify-between items-center mb-1">
-                                    <span class="text-sm font-medium text-slate-700">Clause Progress</span>
-                                    <span class="text-sm font-medium text-slate-500">${completedItems} / ${totalItems} Completed</span>
-                                </div>
-                                <div class="progress-bar-container"><div class="progress-bar" style="width: ${progressPercentage}%;"></div></div>
-                            </div>
-                            <div class="bg-white rounded-lg shadow-sm overflow-hidden">
-                                <div class="table-wrapper">
-                                    <table class="min-w-full divide-y divide-slate-200">
-                                        <thead class="bg-slate-50">
-                                            <tr>
-                                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-1/12">Ref</th>
-                                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-4/12">Requirement & Questions</th>
-                                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-3/12">Evidence / Verification</th>
-                                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-1/12">Status</th>
-                                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-3/12">Auditor's Notes</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody class="bg-white divide-y divide-slate-200">
-                                            ${section.checklist.map((item, index) => {
-                                                const complianceId = `${section.id}-${index}`;
-                                                const { status = 'NA', notes = '' } = complianceState[complianceId] || {};
-                                                return `<tr>
-                                                    <td class="px-4 py-4 align-top font-semibold text-slate-700">${item.ref}</td>
-                                                    <td class="px-4 py-4 align-top">
-                                                        <p class="font-semibold text-slate-800">${item.req}</p>
-                                                        <ul class="mt-2 list-disc list-inside text-sm text-slate-600 space-y-1">${item.q.map(q => `<li>${q}</li>`).join('')}</ul>
-                                                    </td>
-                                                    <td class="px-4 py-4 align-top">
-                                                        <ul class="list-disc list-inside text-sm text-slate-600 space-y-1">${item.evidence.map(e => `<li>${e}</li>`).join('')}</ul>
-                                                    </td>
-                                                    <td class="px-4 py-4 align-top">
-                                                        <select data-id="${complianceId}" class="status-select mt-1 block w-full pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm rounded-md">
-                                                            <option value="NA" ${status === 'NA' ? 'selected' : ''}>N/A</option>
-                                                            <option value="C" ${status === 'C' ? 'selected' : ''}>C</option>
-                                                            <option value="NC" ${status === 'NC' ? 'selected' : ''}>NC</option>
-                                                            <option value="OFI" ${status === 'OFI' ? 'selected' : ''}>OFI</option>
-                                                        </select>
-                                                    </td>
-                                                    <td class="px-4 py-4 align-top">
-                                                        <textarea data-id="${complianceId}" class="notes-input mt-1 block w-full text-sm border-slate-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500" rows="4">${notes}</textarea>
-                                                    </td>
-                                                </tr>`;
-                                            }).join('')}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                            <div class="mt-6 text-right">
-                                <button data-clause-id="${section.id}" class="save-clause-btn bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 active:scale-95 transition-all">Save Changes</button>
-                            </div>`;
+                        const total = section.checklist.length, completed = section.checklist.filter((_, i) => (complianceState[`${section.id}-${i}`] || {}).status !== 'NA').length;
+                        const progress = total > 0 ? (completed / total) * 100 : 0;
+                        div.innerHTML = `
+                            <h2 class="text-3xl font-bold text-slate-800 mb-2">Clause ${section.title}</h2><p class="mb-4 text-slate-600">${section.overview}</p>
+                            <div class="mb-6"><div class="flex justify-between items-center mb-1"><span class="text-sm font-medium">Progress</span><span class="text-sm font-medium">${completed}/${total}</span></div><div class="progress-bar-container"><div class="progress-bar" style="width:${progress}%;"></div></div></div>
+                            <div class="bg-white rounded-lg shadow-sm overflow-hidden"><div class="table-wrapper"><table class="min-w-full divide-y divide-slate-200">
+                            <thead class="bg-slate-50"><tr><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Ref</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Requirement</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Evidence</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Notes</th></tr></thead>
+                            <tbody class="bg-white divide-y divide-slate-200">${section.checklist.map((item, i) => {
+                                const id = `${section.id}-${i}`, { status = 'NA', notes = '' } = complianceState[id] || {};
+                                return `<tr><td>${item.ref}</td><td><p class="font-semibold">${item.req}</p><ul>${item.q.map(q=>`<li>${q}</li>`).join('')}</ul></td><td><ul>${item.evidence.map(e=>`<li>${e}</li>`).join('')}</ul></td><td><select data-id="${id}" class="status-select mt-1 block w-full pl-3 pr-10 py-2 border-slate-300 focus:ring-orange-500 focus:border-orange-500 sm:text-sm rounded-md"><option value="NA" ${status==='NA'?'selected':''}>N/A</option><option value="C" ${status==='C'?'selected':''}>C</option><option value="NC" ${status==='NC'?'selected':''}>NC</option><option value="OFI" ${status==='OFI'?'selected':''}>OFI</option></select></td><td><textarea data-id="${id}" class="notes-input mt-1 block w-full text-sm border-slate-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500" rows="4">${notes}</textarea></td></tr>`;
+                            }).join('')}</tbody></table></div></div>
+                            <div class="mt-6 text-right"><button data-clause-id="${section.id}" class="save-clause-btn bg-orange-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-700 active:scale-95">Save Changes</button></div>`;
                     }
-                    mainContent.appendChild(sectionDiv);
+                    mainContent.appendChild(div);
                 });
-                
-                showSection(activeSectionId);
+                showSection(activeId);
             }
 
             function showSection(id) {
@@ -339,81 +242,60 @@
                 if (id === 'intro') updateAllCharts();
             }
             
-            // --- Event Listeners ---
+            function handleNavClick(e) { e.preventDefault(); e.target.closest('a') && showSection(e.target.closest('a').dataset.id); }
+            function handleMainContentChange(e) { if (e.target.matches('.status-select, .notes-input')) updateSingleItem(e.target.dataset.id, e.target.matches('.status-select') ? 'status' : 'notes', e.target.value); }
+            async function handleMainContentClick(e) {
+                const btn = e.target.closest('.save-clause-btn');
+                if (btn) {
+                    btn.textContent = 'Saving...'; btn.disabled = true;
+                    await saveClauseData(btn.dataset.clauseId);
+                    btn.textContent = 'Saved!'; btn.classList.replace('bg-orange-600', 'bg-blue-600');
+                    setTimeout(() => { btn.textContent = 'Save Changes'; btn.classList.replace('bg-blue-600', 'bg-orange-600'); btn.disabled = false; }, 2000);
+                }
+            }
+            
             function attachEventListeners() {
-                navLinksContainer.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.target.closest('a') && showSection(e.target.closest('a').dataset.id);
-                });
-
-                mainContent.addEventListener('change', (e) => {
-                    const target = e.target;
-                    if (target.matches('.status-select, .notes-input')) {
-                        updateSingleItem(target.dataset.id, target.matches('.status-select') ? 'status' : 'notes', target.value);
-                    }
-                });
-
-                mainContent.addEventListener('click', async (e) => {
-                    const button = e.target.closest('.save-clause-btn');
-                    if (button) {
-                        const originalText = button.textContent;
-                        button.textContent = 'Saving...';
-                        button.disabled = true;
-                        await saveClauseData(button.dataset.clauseId);
-                        button.textContent = 'Saved!';
-                        button.classList.replace('bg-green-600', 'bg-blue-600');
-                        setTimeout(() => {
-                            button.textContent = originalText;
-                            button.classList.replace('bg-blue-600', 'bg-green-600');
-                            button.disabled = false;
-                        }, 2000);
-                    }
-                });
+                navLinksContainer.addEventListener('click', handleNavClick );
+                mainContent.addEventListener('change', handleMainContentChange);
+                mainContent.addEventListener('click', handleMainContentClick);
             }
 
-            // --- Charting ---
             function updateAllCharts() {
-                Object.values(charts).forEach(chart => chart?.destroy());
-
-                if(!complianceState || Object.keys(complianceState).length === 0) return;
-                
-                const progressCtx = document.getElementById('progressChart')?.getContext('2d');
-                if (progressCtx) {
-                    const counts = { C: 0, NC: 0, OFI: 0 };
-                    Object.values(complianceState).forEach(item => counts[item.status]++);
-                    charts.progress = new Chart(progressCtx, { type: 'bar', data: { labels: ['Conformity (C)', 'Nonconformity (NC)', 'Opportunity (OFI)'], datasets: [{ label: 'Audit Findings', data: [counts.C || 0, counts.NC || 0, counts.OFI || 0], backgroundColor: ['#34d399', '#f87171', '#fbbf24'] }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { precision: 0 } } } } });
+                Object.values(charts).forEach(c => c?.destroy());
+                if(!complianceState || !Object.keys(complianceState).length) return;
+                const pCtx = document.getElementById('progressChart')?.getContext('2d');
+                if (pCtx) {
+                    const counts = { C: 0, NC: 0, OFI: 0 }; Object.values(complianceState).forEach(item => counts[item.status]++);
+                    charts.progress = new Chart(pCtx, {type:'bar',data:{labels:['Compliant','Non-Compliant','Opportunity'],datasets:[{data:[counts.C||0,counts.NC||0,counts.OFI||0],backgroundColor:['#34d399','#f87171','#fbbf24']}]},options:{indexAxis:'y',plugins:{legend:{display:false}}}});
                 }
-
-                const conformityCtx = document.getElementById('conformityChart')?.getContext('2d');
-                if (conformityCtx) {
-                    const applicable = Object.values(complianceState).filter(item => item.status !== 'NA');
-                    const conforming = applicable.filter(item => item.status === 'C');
-                    const rate = applicable.length > 0 ? (conforming.length / applicable.length) * 100 : 0;
-                    charts.conformity = new Chart(conformityCtx, { type: 'doughnut', data: { labels: ['Effective', 'Other'], datasets: [{ data: [rate, 100 - rate], backgroundColor: ['#16a34a', '#e5e7eb'], borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { display: false }, tooltip: { enabled: false } } } });
+                const cCtx = document.getElementById('conformityChart')?.getContext('2d');
+                if (cCtx) {
+                    const app = Object.values(complianceState).filter(i=>i.status!=='NA'), conf = app.filter(i=>i.status==='C'), rate = app.length?conf.length/app.length*100:0;
+                    charts.conformity = new Chart(cCtx, {type:'doughnut',data:{labels:['Compliant','Other'],datasets:[{data:[rate,100-rate],backgroundColor:['#f97316','#e5e7eb'],borderWidth:0}]},options:{cutout:'70%',plugins:{legend:{display:false}}}});
                 }
-
-                const statusByClauseCtx = document.getElementById('statusByClauseChart')?.getContext('2d');
-                if (statusByClauseCtx) {
-                    const clauseLabels = auditData.filter(s => s.checklist).map(s => s.title);
-                    const datasets = [
-                        { label: 'Conformity', data: [], backgroundColor: '#34d399' },
-                        { label: 'Nonconformity', data: [], backgroundColor: '#f87171' },
-                        { label: 'Opportunity', data: [], backgroundColor: '#fbbf24' }
-                    ];
-                    clauseLabels.forEach(label => {
-                        const clauseId = auditData.find(s => s.title === label).id;
-                        const clauseItems = Object.keys(complianceState).filter(k => k.startsWith(clauseId));
-                        const counts = { C: 0, NC: 0, OFI: 0 };
-                        clauseItems.forEach(key => counts[complianceState[key].status]++);
-                        datasets[0].data.push(counts.C || 0);
-                        datasets[1].data.push(counts.NC || 0);
-                        datasets[2].data.push(counts.OFI || 0);
+                const sCtx = document.getElementById('statusByClauseChart')?.getContext('2d');
+                if(sCtx){
+                    const labels = auditData.filter(s=>s.checklist).map(s=>s.title);
+                    const datasets = [{label:'Compliant',data:[],backgroundColor:'#34d399'},{label:'Non-Compliant',data:[],backgroundColor:'#f87171'},{label:'Opportunity',data:[],backgroundColor:'#fbbf24'}];
+                    labels.forEach(l=>{
+                        const id=auditData.find(s=>s.title===l).id, items=Object.keys(complianceState).filter(k=>k.startsWith(id)), counts={C:0,NC:0,OFI:0};
+                        items.forEach(k=>counts[complianceState[k].status]++);
+                        datasets[0].data.push(counts.C||0);datasets[1].data.push(counts.NC||0);datasets[2].data.push(counts.OFI||0);
                     });
-                    charts.statusByClause = new Chart(statusByClauseCtx, { type: 'bar', data: { labels: clauseLabels, datasets }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } } } });
+                    charts.statusByClause=new Chart(sCtx, {type:'bar',data:{labels,datasets},options:{scales:{x:{stacked:true},y:{stacked:true}}}});
                 }
             }
 
             // --- App Start ---
+            onAuthStateChanged(auth, user => {
+                if (user) {
+                    authErrorOverlay.classList.add('hidden');
+                    userId = user.uid;
+                    userIdDisplay.textContent = userId;
+                    dbRef = doc(db, `artifacts/${appId}/users/${userId}/iso37301-audit/state`);
+                    setupRealtimeListener();
+                }
+            });
             attachEventListeners();
             await signIn();
         });
