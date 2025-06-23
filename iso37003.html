@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive ISO 37003:2025 Audit Checklist</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        .chart-container {
+            position: relative;
+            margin: auto;
+            height: 350px;
+            width: 100%;
+            max-width: 500px;
+        }
+
+        .sidebar-link {
+            transition: all 0.2s ease-in-out;
+            border-left: 3px solid transparent;
+        }
+
+        .sidebar-link.active {
+            background-color: #f0fdf4; /* bg-green-50 */
+            color: #16a34a; /* text-green-600 */
+            font-weight: 600;
+            border-left-color: #16a34a; /* border-green-600 */
+        }
+        
+        .sidebar-link:not(.active):hover {
+            background-color: #f1f5f9; /* bg-slate-100 */
+        }
+
+        .content-section {
+            transition: opacity 0.3s ease-in-out;
+        }
+
+        .content-section.hidden {
+            opacity: 0;
+            pointer-events: none;
+            position: absolute;
+        }
+
+        .table-wrapper {
+            display: block;
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        td, th {
+            white-space: normal;
+        }
+        
+        .progress-bar-container {
+            background-color: #e5e7eb;
+            border-radius: 9999px;
+            overflow: hidden;
+            height: 8px;
+        }
+
+        .progress-bar {
+            background-color: #16a34a; /* bg-green-600 */
+            height: 100%;
+            transition: width 0.5s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div id="app-container" class="flex flex-col md:flex-row min-h-screen">
+        <!-- Sidebar Navigation -->
+        <nav id="sidebar" class="w-full md:w-72 bg-white border-b md:border-b-0 md:border-r border-slate-200 flex-shrink-0 flex flex-col">
+            <div class="p-4 border-b border-slate-200">
+                <h1 class="text-xl font-bold text-slate-800">ISO 37003:2025</h1>
+                <p class="text-sm text-slate-500">Fraud Control Checklist</p>
+                <div id="user-id-container" class="mt-3 text-xs text-slate-500 bg-slate-100 p-2 rounded-md overflow-hidden break-words">
+                    <span class="font-semibold">User ID:</span><br>
+                    <span id="user-id-display">Loading...</span>
+                </div>
+                 <a href="index.html" class="mt-4 inline-block text-sm text-blue-600 hover:underline">&larr; Back to Main Page</a>
+            </div>
+            <ul id="nav-links" class="flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible flex-grow p-2">
+                <!-- Links will be injected by JS -->
+            </ul>
+        </nav>
+
+        <!-- Main Content -->
+        <main id="main-content" class="flex-1 p-4 sm:p-6 lg:p-8 relative">
+            <!-- Content sections will be injected and toggled by JS -->
+        </main>
+    </div>
+    
+    <footer class="text-center text-sm text-slate-400 py-4 bg-slate-50">
+        Created by Joshua Aritonang
+    </footer>
+    
+    <div id="auth-error-overlay" class="hidden fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center z-50 p-4">
+        <div class="bg-white p-8 rounded-lg shadow-2xl text-center max-w-lg">
+            <h2 class="text-2xl font-bold text-red-600 mb-4">Action Required: Authentication Failed</h2>
+            <p class="text-slate-700 mb-2">The Anonymous sign-in method is not enabled in your Firebase project.</p>
+            <p class="text-slate-600 font-medium">Please follow these steps to fix it:</p>
+            <ol class="text-left text-slate-600 list-decimal list-inside my-4 space-y-2">
+                <li>Go to your <a href="https://console.firebase.google.com/" target="_blank" class="text-blue-600 hover:underline font-semibold">Firebase Console</a>.</li>
+                <li>Select your project: <strong>iso-checklist</strong>.</li>
+                <li>In the left menu, go to <strong>Build > Authentication</strong>.</li>
+                <li>Click the <strong>Sign-in method</strong> tab.</li>
+                <li>Find <strong>Anonymous</strong> in the list, click the pencil icon, and enable it.</li>
+                <li>Click <strong>Save</strong> and then reload this page.</li>
+            </ol>
+        </div>
+    </div>
+
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, updateDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            // --- User's Firebase Configuration ---
+            const firebaseConfig = {
+                apiKey: "AIzaSyA2DLdoUxu28SC_mnvXLijeuzLrq0pNrX4",
+                authDomain: "iso-checklist.firebaseapp.com",
+                projectId: "iso-checklist",
+                storageBucket: "iso-checklist.appspot.com",
+                messagingSenderId: "59632743020",
+                appId: "1:59632743020:web:615b43ac0132195e94de49"
+            };
+            
+            // --- App Initialization ---
+            const app = initializeApp(firebaseConfig);
+            const auth = getAuth(app);
+            const db = getFirestore(app);
+            const appId = firebaseConfig.projectId;
+            
+            const auditData = [
+                { id: 'intro', title: 'Introduction', content: `<h2 class="text-3xl font-bold text-slate-800 mb-4">ISO 37003: Fraud Control</h2> <div class="space-y-6 text-slate-600"> <p>This checklist provides a framework for evaluating your organization's Fraud Control Management System (FCMS) based on ISO 37003 guidelines.</p> <p>ISO 37003 focuses on establishing, implementing, maintaining, and improving controls to prevent, detect, and respond to both internal and external fraud.</p> <p>Use the dashboard below to track your audit progress in real-time.</p> </div> <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8 items-start"> <div class="bg-white p-6 rounded-lg shadow-sm"> <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">Audit Findings Summary</h3> <div class="chart-container h-64"> <canvas id="progressChart"></canvas> </div> </div> <div class="bg-white p-6 rounded-lg shadow-sm"> <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">Overall Control Effectiveness</h3> <div class="chart-container h-64"> <canvas id="conformityChart"></canvas> </div> </div> <div class="bg-white p-6 rounded-lg shadow-sm lg:col-span-2"> <h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">Status by Clause</h3> <div class="chart-container"> <canvas id="statusByClauseChart"></canvas> </div> </div></div>` },
+                { id: 'clause-4', title: '4. Context', overview: `Understanding the internal and external factors that create fraud risks.`, checklist: [ { ref: '4.1', req: 'Organization and Context', q: ['Have internal/external issues relevant to fraud risk been determined?'], evidence: ['SWOT/PESTEL analysis', 'Risk management documentation'] }, { ref: '4.2', req: 'Interested Parties', q: ['Have the needs and expectations of stakeholders regarding fraud control been identified?'], evidence: ['Stakeholder maps', 'Compliance requirements list'] }, { ref: '4.5', req: 'Fraud Risk Assessment', q: ['Is there a systematic process to identify, analyze, and evaluate fraud risks?', 'Is the assessment regularly reviewed and updated?'], evidence: ['Fraud risk assessment methodology', 'Fraud risk register', 'Management review minutes'] } ] },
+                { id: 'clause-5', title: '5. Leadership', overview: `Ensuring top-down commitment to a culture of integrity and fraud control.`, checklist: [ { ref: '5.1', req: 'Leadership and Commitment', q: ['Does leadership demonstrate commitment to the FCMS?', 'Are adequate resources provided for fraud control?'], evidence: ['Board meeting minutes', 'Budgets for compliance/fraud teams'] }, { ref: '5.2', req: 'Fraud Control Policy', q: ['Is there a documented policy that prohibits fraud?', 'Is the policy communicated to all relevant parties?'], evidence: ['Official anti-fraud policy document', 'Communication records (emails, training logs)'] } ] },
+                { id: 'clause-6', title: '6. Planning', overview: `Setting objectives and planning actions to address identified fraud risks.`, checklist: [ { ref: '6.1', req: 'Actions for Risks', q: ['Are actions planned to address significant fraud risks?'], evidence: ['Risk treatment plans', 'Project plans for new controls'] }, { ref: '6.2', req: 'Fraud Control Objectives', q: ['Are measurable fraud control objectives established?', 'Are these objectives aligned with the anti-fraud policy?'], evidence: ['Documented objectives', 'Performance monitoring records'] } ] },
+                { id: 'clause-7', title: '7. Support', overview: `Allocating resources and ensuring competence, awareness, and communication.`, checklist: [ { ref: '7.1', req: 'Resources', q: ['Are sufficient resources (people, tech) allocated for the FCMS?'], evidence: ['Staffing plans', 'Technology investment records'] }, { ref: '7.2', req: 'Competence', q: ['Are personnel in key roles competent to manage fraud risks?', 'Is there a process for screening new employees?'], evidence: ['Job descriptions', 'Training records', 'HR background check procedures'] }, { ref: '7.4', req: 'Communication', q: ['Is there a plan for internal and external communication about fraud control?'], evidence: ['Communication plan', 'Whistleblower policy documents'] } ] },
+                { id: 'clause-8', title: '8. Operation', overview: `Implementing processes and controls to prevent, detect, and respond to fraud.`, checklist: [ { ref: '8.2', req: 'Fraud Prevention', q: ['Are internal controls designed to prevent fraud (e.g., segregation of duties)?', 'Are third parties and business associates screened for fraud risk?'], evidence: ['Internal control procedures', 'Due diligence reports on partners'] }, { ref: '8.3', req: 'Fraud Detection', q: ['Are mechanisms in place to detect fraud (e.g., data analytics, audits)?', 'Is there a secure reporting channel (whistleblowing)?'], evidence: ['Data analysis reports', 'Internal audit reports', 'Whistleblower system documentation'] }, { ref: '8.4', req: 'Fraud Response', q: ['Is there a documented plan to respond to suspected fraud?', 'Does the plan include investigation protocols and disciplinary actions?'], evidence: ['Incident response plan', 'Investigation procedures', 'Case management files'] } ] },
+                { id: 'clause-9', title: '9. Performance', overview: `Monitoring, measuring, and evaluating the effectiveness of the FCMS.`, checklist: [ { ref: '9.1', req: 'Monitoring & Measurement', q: ['Is the performance of the FCMS monitored against objectives?'], evidence: ['KPI dashboards', 'Performance reports'] }, { ref: '9.2', req: 'Internal Audit', q: ['Are internal audits of the FCMS conducted at planned intervals?'], evidence: ['Internal audit schedule', 'Audit reports and findings'] }, { ref: '9.3', req: 'Management Review', q: ['Does top management review the FCMS to ensure its suitability and effectiveness?'], evidence: ['Management review minutes', 'Action items from reviews'] } ] },
+                { id: 'clause-10', title: '10. Improvement', overview: `Addressing non-conformities and continually improving the FCMS.`, checklist: [ { ref: '10.1', req: 'Continual Improvement', q: ['Are opportunities for improving the FCMS identified and acted upon?'], evidence: ['Improvement logs', 'Updated procedures after incidents'] }, { ref: '10.2', req: 'Corrective Action', q: ['Is there a process for investigating non-conformities and taking corrective action?', 'Is the effectiveness of actions reviewed?'], evidence: ['Corrective action reports (CARs)', 'Root cause analysis documentation'] } ] }
+            ];
+
+            // DOM Element References
+            const mainContent = document.getElementById('main-content');
+            const navLinksContainer = document.getElementById('nav-links');
+            const userIdDisplay = document.getElementById('user-id-display');
+            const authErrorOverlay = document.getElementById('auth-error-overlay');
+
+            let complianceState = {};
+            let charts = {};
+            let userId = null;
+            let dbRef = null;
+            let unsubscribe = null;
+
+            // --- Authentication ---
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    authErrorOverlay.classList.add('hidden');
+                    userId = user.uid;
+                    userIdDisplay.textContent = userId;
+                    dbRef = doc(db, `artifacts/${appId}/users/${userId}/iso37003-audit/state`);
+                    setupRealtimeListener();
+                }
+            });
+            
+            async function signIn() {
+                try {
+                     await signInAnonymously(auth);
+                } catch(error) {
+                    console.error("Authentication error:", error);
+                    if (error.code === 'auth/configuration-not-found') {
+                        authErrorOverlay.classList.remove('hidden');
+                    } else {
+                        userIdDisplay.textContent = 'Auth Failed';
+                    }
+                }
+            }
+
+            // --- Firestore Realtime Listener ---
+            function setupRealtimeListener() {
+                if (unsubscribe) unsubscribe(); 
+
+                unsubscribe = onSnapshot(dbRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        complianceState = docSnap.data();
+                    } else {
+                        initializeState();
+                        setDoc(dbRef, complianceState);
+                    }
+                    render(); 
+                }, (error) => {
+                    console.error("Firestore snapshot error:", error);
+                });
+            }
+
+            // --- State Management ---
+            function initializeState() {
+                const initialState = {};
+                auditData.forEach(section => {
+                    if(section.checklist) {
+                        section.checklist.forEach((item, index) => {
+                            const complianceId = `${section.id}-${index}`;
+                            initialState[complianceId] = { status: 'NA', notes: '' };
+                        });
+                    }
+                });
+                complianceState = initialState;
+            }
+
+            async function updateSingleItem(id, key, value) {
+                if (complianceState[id] && dbRef) {
+                    complianceState[id][key] = value;
+                    const fieldPath = `${id}.${key}`;
+                    await updateDoc(dbRef, { [fieldPath]: value }).catch(error => {
+                        console.error("Error updating single item: ", error);
+                    });
+                }
+            }
+            
+            async function saveClauseData(clauseId) {
+                const clauseInputs = document.querySelectorAll(`#${clauseId} [data-id]`);
+                if (clauseInputs.length === 0 || !dbRef) return;
+
+                const batch = writeBatch(db);
+                clauseInputs.forEach(input => {
+                    const id = input.dataset.id;
+                    const key = input.classList.contains('status-select') ? 'status' : 'notes';
+                    batch.update(dbRef, { [`${id}.${key}`]: input.value });
+                    if(complianceState[id]) complianceState[id][key] = input.value;
+                });
+
+                await batch.commit();
+                updateAllCharts();
+            }
+
+
+            // --- Rendering ---
+            function render() {
+                const activeSectionId = document.querySelector('.sidebar-link.active')?.dataset.id || 'intro';
+                mainContent.innerHTML = '';
+                navLinksContainer.innerHTML = '';
+
+                auditData.forEach(section => {
+                    const navLink = document.createElement('li');
+                    navLink.innerHTML = `<a href="#" data-id="${section.id}" class="sidebar-link block p-3 px-4 text-sm rounded-md">${section.title}</a>`;
+                    navLinksContainer.appendChild(navLink);
+
+                    const sectionDiv = document.createElement('div');
+                    sectionDiv.id = section.id;
+                    sectionDiv.className = 'content-section'; 
+
+                    if (section.id !== activeSectionId) {
+                        sectionDiv.classList.add('hidden');
+                    }
+
+                    if (section.content) {
+                        sectionDiv.innerHTML = section.content;
+                    } else {
+                        const totalItems = section.checklist.length;
+                        const completedItems = section.checklist.filter((_, index) => (complianceState[`${section.id}-${index}`] || {}).status !== 'NA').length;
+                        const progressPercentage = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
+
+                        sectionDiv.innerHTML = `
+                            <h2 class="text-3xl font-bold text-slate-800 mb-2">Clause ${section.title}</h2>
+                            <p class="mb-4 text-slate-600">${section.overview}</p>
+                            <div class="mb-6">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="text-sm font-medium text-slate-700">Clause Progress</span>
+                                    <span class="text-sm font-medium text-slate-500">${completedItems} / ${totalItems} Completed</span>
+                                </div>
+                                <div class="progress-bar-container"><div class="progress-bar" style="width: ${progressPercentage}%;"></div></div>
+                            </div>
+                            <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+                                <div class="table-wrapper">
+                                    <table class="min-w-full divide-y divide-slate-200">
+                                        <thead class="bg-slate-50">
+                                            <tr>
+                                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-1/12">Ref</th>
+                                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-4/12">Requirement & Questions</th>
+                                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-3/12">Evidence / Verification</th>
+                                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-1/12">Status</th>
+                                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-3/12">Auditor's Notes</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="bg-white divide-y divide-slate-200">
+                                            ${section.checklist.map((item, index) => {
+                                                const complianceId = `${section.id}-${index}`;
+                                                const { status = 'NA', notes = '' } = complianceState[complianceId] || {};
+                                                return `<tr>
+                                                    <td class="px-4 py-4 align-top font-semibold text-slate-700">${item.ref}</td>
+                                                    <td class="px-4 py-4 align-top">
+                                                        <p class="font-semibold text-slate-800">${item.req}</p>
+                                                        <ul class="mt-2 list-disc list-inside text-sm text-slate-600 space-y-1">${item.q.map(q => `<li>${q}</li>`).join('')}</ul>
+                                                    </td>
+                                                    <td class="px-4 py-4 align-top">
+                                                        <ul class="list-disc list-inside text-sm text-slate-600 space-y-1">${item.evidence.map(e => `<li>${e}</li>`).join('')}</ul>
+                                                    </td>
+                                                    <td class="px-4 py-4 align-top">
+                                                        <select data-id="${complianceId}" class="status-select mt-1 block w-full pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm rounded-md">
+                                                            <option value="NA" ${status === 'NA' ? 'selected' : ''}>N/A</option>
+                                                            <option value="C" ${status === 'C' ? 'selected' : ''}>C</option>
+                                                            <option value="NC" ${status === 'NC' ? 'selected' : ''}>NC</option>
+                                                            <option value="OFI" ${status === 'OFI' ? 'selected' : ''}>OFI</option>
+                                                        </select>
+                                                    </td>
+                                                    <td class="px-4 py-4 align-top">
+                                                        <textarea data-id="${complianceId}" class="notes-input mt-1 block w-full text-sm border-slate-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500" rows="4">${notes}</textarea>
+                                                    </td>
+                                                </tr>`;
+                                            }).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="mt-6 text-right">
+                                <button data-clause-id="${section.id}" class="save-clause-btn bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 active:scale-95 transition-all">Save Changes</button>
+                            </div>`;
+                    }
+                    mainContent.appendChild(sectionDiv);
+                });
+                
+                showSection(activeSectionId);
+            }
+
+            function showSection(id) {
+                document.querySelectorAll('.content-section').forEach(s => s.id !== id && s.classList.add('hidden'));
+                document.getElementById(id)?.classList.remove('hidden');
+                document.querySelectorAll('#nav-links a').forEach(a => a.classList.toggle('active', a.dataset.id === id));
+                if (id === 'intro') updateAllCharts();
+            }
+            
+            // --- Event Listeners ---
+            function attachEventListeners() {
+                navLinksContainer.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.target.closest('a') && showSection(e.target.closest('a').dataset.id);
+                });
+
+                mainContent.addEventListener('change', (e) => {
+                    const target = e.target;
+                    if (target.matches('.status-select, .notes-input')) {
+                        updateSingleItem(target.dataset.id, target.matches('.status-select') ? 'status' : 'notes', target.value);
+                    }
+                });
+
+                mainContent.addEventListener('click', async (e) => {
+                    const button = e.target.closest('.save-clause-btn');
+                    if (button) {
+                        const originalText = button.textContent;
+                        button.textContent = 'Saving...';
+                        button.disabled = true;
+                        await saveClauseData(button.dataset.clauseId);
+                        button.textContent = 'Saved!';
+                        button.classList.replace('bg-green-600', 'bg-blue-600');
+                        setTimeout(() => {
+                            button.textContent = originalText;
+                            button.classList.replace('bg-blue-600', 'bg-green-600');
+                            button.disabled = false;
+                        }, 2000);
+                    }
+                });
+            }
+
+            // --- Charting ---
+            function updateAllCharts() {
+                Object.values(charts).forEach(chart => chart?.destroy());
+
+                if(!complianceState || Object.keys(complianceState).length === 0) return;
+                
+                const progressCtx = document.getElementById('progressChart')?.getContext('2d');
+                if (progressCtx) {
+                    const counts = { C: 0, NC: 0, OFI: 0 };
+                    Object.values(complianceState).forEach(item => counts[item.status]++);
+                    charts.progress = new Chart(progressCtx, { type: 'bar', data: { labels: ['Conformity (C)', 'Nonconformity (NC)', 'Opportunity (OFI)'], datasets: [{ label: 'Audit Findings', data: [counts.C || 0, counts.NC || 0, counts.OFI || 0], backgroundColor: ['#34d399', '#f87171', '#fbbf24'] }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { precision: 0 } } } } });
+                }
+
+                const conformityCtx = document.getElementById('conformityChart')?.getContext('2d');
+                if (conformityCtx) {
+                    const applicable = Object.values(complianceState).filter(item => item.status !== 'NA');
+                    const conforming = applicable.filter(item => item.status === 'C');
+                    const rate = applicable.length > 0 ? (conforming.length / applicable.length) * 100 : 0;
+                    charts.conformity = new Chart(conformityCtx, { type: 'doughnut', data: { labels: ['Effective', 'Other'], datasets: [{ data: [rate, 100 - rate], backgroundColor: ['#16a34a', '#e5e7eb'], borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { display: false }, tooltip: { enabled: false } } } });
+                }
+
+                const statusByClauseCtx = document.getElementById('statusByClauseChart')?.getContext('2d');
+                if (statusByClauseCtx) {
+                    const clauseLabels = auditData.filter(s => s.checklist).map(s => s.title);
+                    const datasets = [
+                        { label: 'Conformity', data: [], backgroundColor: '#34d399' },
+                        { label: 'Nonconformity', data: [], backgroundColor: '#f87171' },
+                        { label: 'Opportunity', data: [], backgroundColor: '#fbbf24' }
+                    ];
+                    clauseLabels.forEach(label => {
+                        const clauseId = auditData.find(s => s.title === label).id;
+                        const clauseItems = Object.keys(complianceState).filter(k => k.startsWith(clauseId));
+                        const counts = { C: 0, NC: 0, OFI: 0 };
+                        clauseItems.forEach(key => counts[complianceState[key].status]++);
+                        datasets[0].data.push(counts.C || 0);
+                        datasets[1].data.push(counts.NC || 0);
+                        datasets[2].data.push(counts.OFI || 0);
+                    });
+                    charts.statusByClause = new Chart(statusByClauseCtx, { type: 'bar', data: { labels: clauseLabels, datasets }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } } } });
+                }
+            }
+
+            // --- App Start ---
+            attachEventListeners();
+            await signIn();
+        });
+    </script>
+</body>
+</html>
