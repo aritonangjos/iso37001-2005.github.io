@@ -14,17 +14,19 @@
         .sidebar-link.active { background-color: #f5f3ff; color: #7c3aed; font-weight: 600; border-left-color: #7c3aed; }
         .sidebar-link:not(.active):hover { background-color: #f1f5f9; }
         .content-section { transition: opacity 0.3s ease-in-out; }
-        .content-section.hidden { opacity: 0; pointer-events: none; position: absolute; }
-        .table-wrapper { display: block; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .content-section.hidden { display: none; }
         td, th { white-space: normal; padding: 1rem; vertical-align: top; }
         .progress-bar-container { background-color: #e5e7eb; border-radius: 9999px; overflow: hidden; height: 8px; }
         .progress-bar { background-color: #7c3aed; height: 100%; transition: width 0.5s ease-in-out; }
+        .delete-btn { color: #9ca3af; cursor: pointer; transition: color 0.2s; font-weight: bold; }
+        .delete-btn:hover { color: #ef4444; }
+        .input-field { width: 100%; background-color: transparent; padding: 0.25rem; outline: none; }
+        .edit-mode .input-field { background-color: #f9fafb; border: 1px solid #d1d5db; border-radius: 0.25rem; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
 
     <div id="app-container" class="flex flex-col md:flex-row min-h-screen">
-        <!-- Sidebar Navigation -->
         <nav id="sidebar" class="w-full md:w-72 bg-white border-b md:border-b-0 md:border-r border-slate-200 flex-shrink-0 flex flex-col">
             <div class="p-4 border-b border-slate-200">
                 <h1 class="text-xl font-bold text-slate-800">ISO 27001</h1>
@@ -38,7 +40,6 @@
             <ul id="nav-links" class="flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible flex-grow p-2"></ul>
         </nav>
 
-        <!-- Main Content -->
         <main id="main-content" class="flex-1 p-4 sm:p-6 lg:p-8 relative"></main>
     </div>
     
@@ -60,7 +61,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, updateDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, onSnapshot, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         document.addEventListener('DOMContentLoaded', async () => {
             const firebaseConfig = { apiKey: "AIzaSyA2DLdoUxu28SC_mnvXLijeuzLrq0pNrX4", authDomain: "iso-checklist.firebaseapp.com", projectId: "iso-checklist", storageBucket: "iso-checklist.appspot.com", messagingSenderId: "59632743020", appId: "1:59632743020:web:615b43ac0132195e94de49" };
@@ -69,103 +70,148 @@
             const db = getFirestore(app);
             const appId = firebaseConfig.projectId;
             
-            const auditData = [
+            const baseAuditData = [
                 { id: 'intro', title: 'Introduction', content: `<h2 class="text-3xl font-bold text-slate-800 mb-4">ISO 27001: Information Security</h2><div class="space-y-6 text-slate-600"><p>This checklist is for your Information Security Management System (ISMS), based on ISO 27001.</p><p>It covers requirements for establishing, implementing, maintaining, and continually improving the ISMS.</p></div><div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8 items-start"><div class="bg-white p-6 rounded-lg shadow-sm"><h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">Audit Findings Summary</h3><div class="chart-container h-64"><canvas id="progressChart"></canvas></div></div><div class="bg-white p-6 rounded-lg shadow-sm"><h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">Overall Compliance</h3><div class="chart-container h-64"><canvas id="conformityChart"></canvas></div></div><div class="bg-white p-6 rounded-lg shadow-sm lg:col-span-2"><h3 class="text-xl font-semibold text-slate-700 mb-4 text-center">Status by Clause</h3><div class="chart-container"><canvas id="statusByClauseChart"></canvas></div></div></div>` },
-                { id: 'clause-4', title: '4. Context', overview: `Defining the ISMS scope by understanding internal/external issues and stakeholder requirements.`, checklist: [ { ref: '4.1', req: 'Understanding the organization and its context', q: ['How are internal/external issues relevant to information security determined?'], evidence: ['SWOT/PESTEL analysis', 'Risk management documentation'] }, { ref: '4.2', req: 'Understanding interested parties', q: ['Who are the interested parties and what are their requirements related to the ISMS?'], evidence: ['Stakeholder analysis documentation'] }, { ref: '4.3', req: 'Determining the ISMS scope', q: ['Is the scope of the ISMS clearly documented and defined?'], evidence: ['ISMS Scope Statement'] } ] },
-                { id: 'clause-5', title: '5. Leadership', overview: `Ensuring top management commitment and establishing an information security policy.`, checklist: [ { ref: '5.1', req: 'Leadership and commitment', q: ['How does top management demonstrate commitment to the ISMS?'], evidence: ['Management review minutes', 'Resource allocation records'] }, { ref: '5.2', req: 'Policy', q: ['Is there an information security policy approved by top management?'], evidence: ['Information Security Policy document'] }, { ref: '5.3', req: 'Roles and responsibilities', q: ['Are information security roles and responsibilities assigned and communicated?'], evidence: ['Organizational charts', 'Job descriptions'] } ] },
-                { id: 'clause-6', title: '6. Planning', overview: `Addressing risks and opportunities and setting information security objectives.`, checklist: [ { ref: '6.1.2', req: 'Information security risk assessment', q: ['Is there a formal process for assessing information security risks?'], evidence: ['Risk assessment methodology', 'Risk register'] }, { ref: '6.1.3', req: 'Information security risk treatment', q: ['Is there a risk treatment plan with selected controls (referencing Annex A)?'], evidence: ['Risk Treatment Plan', 'Statement of Applicability (SoA)'] }, { ref: '6.2', req: 'Information security objectives', q: ['Are measurable information security objectives established?'], evidence: ['Documented objectives and plans'] } ] },
-                { id: 'clause-7', title: '7. Support', overview: `Ensuring resources, competence, awareness, and communication for the ISMS.`, checklist: [ { ref: '7.2', req: 'Competence', q: ['How is the competence of personnel in information security roles ensured?'], evidence: ['Training records', 'Certifications', 'Skills matrix'] }, { ref: '7.3', req: 'Awareness', q: ['Are personnel aware of the information security policy and their responsibilities?'], evidence: ['Awareness campaign materials', 'Training logs'] }, { ref: '7.4', req: 'Communication', q: ['Are there processes for internal and external communication about the ISMS?'], evidence: ['Communication plan', 'Meeting minutes'] } ] },
-                { id: 'clause-8', title: '8. Operation', overview: `Implementing the plans and controls to manage information security risks.`, checklist: [ { ref: '8.1', req: 'Operational planning and control', q: ['Are processes controlled to meet information security requirements?'], evidence: ['Change management records', 'Process documentation'] }, { ref: '8.2', req: 'Information security risk assessment', q: ['Are risk assessments performed at planned intervals?'], evidence: ['Completed risk assessment reports'] }, { ref: '8.3', req: 'Information security risk treatment', q: ['Is the risk treatment plan being implemented?'], evidence: ['Project status reports for security initiatives', 'Control implementation records'] } ] },
-                { id: 'clause-9', title: '9. Performance', overview: `Monitoring, measuring, analyzing, and evaluating the ISMS performance.`, checklist: [ { ref: '9.1', req: 'Monitoring and measurement', q: ['How is the effectiveness of the ISMS and its controls monitored?'], evidence: ['Security metrics dashboards', 'KPI reports'] }, { ref: '9.2', req: 'Internal audit', q: ['Are internal ISMS audits conducted?'], evidence: ['Internal audit schedule and reports'] }, { ref: '9.3', req: 'Management review', q: ['Does top management review the ISMS at planned intervals?'], evidence: ['Management review meeting minutes and action items'] } ] },
-                { id: 'clause-10', title: '10. Improvement', overview: `Addressing nonconformities and continually improving the ISMS.`, checklist: [ { ref: '10.1', req: 'Continual improvement', q: ['How is the ISMS continually improved?'], evidence: ['Improvement plans', 'Updated documentation'] }, { ref: '10.2', req: 'Nonconformity and corrective action', q: ['Is there a process for handling nonconformities and taking corrective actions?'], evidence: ['Corrective action reports (CARs)', 'Root cause analysis'] } ] }
+                { id: 'clause-4', title: '4. Context', overview: `Defining the ISMS scope by understanding internal/external issues and stakeholder requirements.`, checklist: [ { ref: '4.1', req: 'Understanding the organization and its context', questions: [{ id: 'q1', text: 'How are internal/external issues relevant to information security determined?', evidences: [{id: 'e1', text: 'SWOT/PESTEL analysis, Risk management documentation', n:'', s:'NA'}]}] }, { ref: '4.2', req: 'Understanding interested parties', questions: [{ id: 'q1', text: 'Who are the interested parties and what are their requirements related to the ISMS?', evidences: [{id: 'e1', text: 'Stakeholder analysis documentation', n:'', s:'NA'}] }] }, { ref: '4.3', req: 'Determining the ISMS scope', questions: [{ id: 'q1', text: 'Is the scope of the ISMS clearly documented and defined?', evidences: [{id: 'e1', text: 'ISMS Scope Statement', n:'', s:'NA'}] }] } ] },
+                { id: 'clause-5', title: '5. Leadership', overview: `Ensuring top management commitment and establishing an information security policy.`, checklist: [ { ref: '5.1', req: 'Leadership and commitment', questions: [{ id: 'q1', text: 'How does top management demonstrate commitment to the ISMS?', evidences: [{id: 'e1', text: 'Management review minutes, Resource allocation records', n:'', s:'NA'}]}] }, { ref: '5.2', req: 'Policy', questions: [{ id: 'q1', text: 'Is there an information security policy approved by top management?', evidences: [{id: 'e1', text: 'Information Security Policy document', n:'', s:'NA'}] }] }, { ref: '5.3', req: 'Roles and responsibilities', questions: [{ id: 'q1', text: 'Are information security roles and responsibilities assigned and communicated?', evidences: [{id: 'e1', text: 'Organizational charts, Job descriptions', n:'', s:'NA'}] }] } ] },
+                { id: 'clause-6', title: '6. Planning', overview: `Addressing risks and opportunities and setting information security objectives.`, checklist: [ { ref: '6.1.2', req: 'Information security risk assessment', questions: [{ id: 'q1', text: 'Is there a formal process for assessing information security risks?', evidences: [{id: 'e1', text: 'Risk assessment methodology, Risk register', n:'', s:'NA'}]}] }, { ref: '6.1.3', req: 'Information security risk treatment', questions: [{ id: 'q1', text: 'Is there a risk treatment plan with selected controls (referencing Annex A)?', evidences: [{id: 'e1', text: 'Risk Treatment Plan, Statement of Applicability (SoA)', n:'', s:'NA'}] }] }, { ref: '6.2', req: 'Information security objectives', questions: [{ id: 'q1', text: 'Are measurable information security objectives established?', evidences: [{id: 'e1', text: 'Documented objectives and plans', n:'', s:'NA'}] }] } ] },
+                { id: 'clause-7', title: '7. Support', overview: `Ensuring resources, competence, awareness, and communication for the ISMS.`, checklist: [ { ref: '7.1', req: 'Resources', questions: [{ id: 'q1', text: 'Are sufficient resources allocated for the ISMS?', evidences: [{id: 'e1', text: 'Budget records, Staffing plans', n:'', s:'NA'}] }] }, { ref: '7.2', req: 'Competence', questions: [{ id: 'q1', text: 'How is the competence of personnel in information security roles ensured?', evidences: [{id: 'e1', text: 'Training records, Certifications, Skills matrix', n:'', s:'NA'}] }] }, { ref: '7.3', req: 'Awareness', questions: [{ id: 'q1', text: 'Are personnel aware of the information security policy and their responsibilities?', evidences: [{id: 'e1', text: 'Awareness campaign materials, Training logs', n:'', s:'NA'}] }] }, { ref: '7.4', req: 'Communication', questions: [{ id: 'q1', text: 'Are there processes for internal and external communication about the ISMS?', evidences: [{id: 'e1', text: 'Communication plan, Meeting minutes', n:'', s:'NA'}] }] } ] },
+                { id: 'clause-8', title: '8. Operation', overview: `Implementing the plans and controls to manage information security risks.`, checklist: [ { ref: '8.1', req: 'Operational planning and control', questions: [{ id: 'q1', text: 'Are processes controlled to meet information security requirements?', evidences: [{id: 'e1', text: 'Change management records, Process documentation', n:'', s:'NA'}] }] }, { ref: '8.2', req: 'Information security risk assessment', questions: [{ id: 'q1', text: 'Are risk assessments performed at planned intervals?', evidences: [{id: 'e1', text: 'Completed risk assessment reports', n:'', s:'NA'}] }] }, { ref: '8.3', req: 'Information security risk treatment', questions: [{ id: 'q1', text: 'Is the risk treatment plan being implemented?', evidences: [{id: 'e1', text: 'Project status reports for security initiatives, Control implementation records', n:'', s:'NA'}] }] } ] },
+                { id: 'clause-9', title: '9. Performance', overview: `Monitoring, measuring, analyzing, and evaluating the ISMS performance.`, checklist: [ { ref: '9.1', req: 'Monitoring and measurement', questions: [{ id: 'q1', text: 'How is the effectiveness of the ISMS and its controls monitored?', evidences: [{id: 'e1', text: 'Security metrics dashboards, KPI reports', n:'', s:'NA'}] }] }, { ref: '9.2', req: 'Internal audit', questions: [{ id: 'q1', text: 'Are internal ISMS audits conducted?', evidences: [{id: 'e1', text: 'Internal audit schedule and reports', n:'', s:'NA'}] }] }, { ref: '9.3', req: 'Management review', questions: [{ id: 'q1', text: 'Does top management review the ISMS at planned intervals?', evidences: [{id: 'e1', text: 'Management review meeting minutes and action items', n:'', s:'NA'}] }] } ] },
+                { id: 'clause-10', title: '10. Improvement', overview: `Addressing nonconformities and continually improving the ISMS.`, checklist: [ { ref: '10.1', req: 'Continual improvement', questions: [{ id: 'q1', text: 'How is the ISMS continually improved?', evidences: [{id: 'e1', text: 'Improvement plans, Updated documentation', n:'', s:'NA'}] }] }, { ref: '10.2', req: 'Nonconformity and corrective action', questions: [{ id: 'q1', text: 'Is there a process for handling nonconformities and taking corrective actions?', evidences: [{id: 'e1', text: 'Corrective action reports (CARs), Root cause analysis', n:'', s:'NA'}] }] } ] }
             ];
 
-            const mainContent = document.getElementById('main-content');
-            const navLinksContainer = document.getElementById('nav-links');
-            const userIdDisplay = document.getElementById('user-id-display');
-            const authErrorOverlay = document.getElementById('auth-error-overlay');
-            let complianceState = {}, charts = {}, userId = null, dbRef = null, unsubscribe = null;
+            const mainContent = document.getElementById('main-content'), navLinksContainer = document.getElementById('nav-links'), userIdDisplay = document.getElementById('user-id-display'), authErrorOverlay = document.getElementById('auth-error-overlay');
+            let complianceState = {}, charts = {}, userId = null, dbRef = null, unsubscribe = null, editModeState = {};
 
-            // --- Function Declarations ---
             async function signIn() {
-                try { await signInAnonymously(auth); } catch(error) {
-                    console.error("Authentication error:", error);
+                try { await signInAnonymously(auth); } catch (error) {
+                    console.error("Auth Error:", error);
                     if (error.code === 'auth/configuration-not-found') authErrorOverlay.classList.remove('hidden');
                     else userIdDisplay.textContent = 'Auth Failed';
                 }
             }
 
             function setupRealtimeListener() {
-                if (unsubscribe) unsubscribe(); 
-                unsubscribe = onSnapshot(dbRef, docSnap => {
-                    if (docSnap.exists()) complianceState = docSnap.data();
-                    else { initializeState(); setDoc(dbRef, complianceState); }
-                    render(); 
+                if (unsubscribe) unsubscribe();
+                unsubscribe = onSnapshot(dbRef, (docSnap) => {
+                    if (docSnap.exists() && Object.keys(docSnap.data()).length > 0) {
+                        complianceState = docSnap.data();
+                    } else {
+                        initializeState();
+                    }
+                    render();
                 }, console.error);
             }
-
+            
             function initializeState() {
                 const initialState = {};
-                auditData.forEach(s => s.checklist?.forEach((item, i) => initialState[`${s.id}-${i}`] = { status: 'NA', notes: '' }));
+                baseAuditData.forEach(section => {
+                    if (section.checklist) {
+                        section.checklist.forEach((item, itemIndex) => {
+                            const itemId = `${section.id}-${itemIndex}`;
+                            initialState[itemId] = {
+                                questions: item.questions.map(q => ({ 
+                                    ...q, 
+                                    isCustom: false, 
+                                    evidences: q.evidences.map(e => ({...e, isCustom: false})) 
+                                }))
+                            };
+                        });
+                    }
+                });
+                setDoc(dbRef, initialState);
                 complianceState = initialState;
             }
 
-            async function updateSingleItem(id, key, value) {
-                if (complianceState[id] && dbRef) {
-                    complianceState[id][key] = value;
-                    const fieldPath = `${id}.${key}`;
-                    await updateDoc(dbRef, { [fieldPath]: value }).catch(error => {
-                        console.error("Error updating single item: ", error);
-                    });
-                }
-            }
-            
-            async function saveClauseData(clauseId) {
-                const clauseInputs = document.querySelectorAll(`#${clauseId} [data-id]`);
-                if (!clauseInputs.length || !dbRef) return;
-                const batch = writeBatch(db);
-                clauseInputs.forEach(input => {
-                    const id = input.dataset.id;
-                    const key = input.matches('.status-select') ? 'status' : 'notes';
-                    batch.update(dbRef, { [`${id}.${key}`]: input.value });
-                    if(complianceState[id]) complianceState[id][key] = input.value;
-                });
-                await batch.commit();
-                updateAllCharts();
+            async function updateDb(data) {
+                if (!dbRef) return;
+                await setDoc(dbRef, data).catch(console.error);
             }
 
             function render() {
                 const activeId = document.querySelector('.sidebar-link.active')?.dataset.id || 'intro';
                 mainContent.innerHTML = '';
                 navLinksContainer.innerHTML = '';
-                auditData.forEach(section => {
+                baseAuditData.forEach(section => {
                     navLinksContainer.innerHTML += `<a href="#" data-id="${section.id}" class="sidebar-link block p-3 px-4 text-sm rounded-md">${section.title}</a>`;
-                    const sectionDiv = document.createElement('div');
-                    sectionDiv.id = section.id;
-                    sectionDiv.className = `content-section ${section.id !== activeId ? 'hidden' : ''}`;
+                    const div = document.createElement('div');
+                    div.id = section.id;
+                    div.className = `content-section ${section.id !== activeId ? 'hidden' : ''}`;
                     if (section.content) {
-                        sectionDiv.innerHTML = section.content;
+                        div.innerHTML = section.content;
                     } else {
-                        const total = section.checklist.length;
-                        const completed = section.checklist.filter((_, i) => (complianceState[`${section.id}-${i}`] || {}).status !== 'NA').length;
-                        const progress = total > 0 ? (completed / total) * 100 : 0;
-                        sectionDiv.innerHTML = `
+                        const allEvidences = section.checklist.flatMap((item, i) => (complianceState[`${section.id}-${i}`]?.questions || []).flatMap(q => Array.isArray(q.evidences) ? q.evidences : Object.values(q.evidences || {})));
+                        const completedEvidences = allEvidences.filter(e => e.s !== 'NA').length;
+                        const progress = allEvidences.length > 0 ? (completedEvidences / allEvidences.length) * 100 : 0;
+                        
+                        div.innerHTML = `
                             <h2 class="text-3xl font-bold text-slate-800 mb-2">Clause ${section.title}</h2>
                             <p class="mb-4 text-slate-600">${section.overview}</p>
-                            <div class="mb-6"><div class="flex justify-between items-center mb-1"><span class="text-sm font-medium text-slate-700">Clause Progress</span><span class="text-sm font-medium text-slate-500">${completed}/${total} Completed</span></div><div class="progress-bar-container"><div class="progress-bar" style="width:${progress}%;"></div></div></div>
-                            <div class="bg-white rounded-lg shadow-sm overflow-hidden"><div class="table-wrapper"><table class="min-w-full divide-y divide-slate-200">
-                                <thead class="bg-slate-50"><tr><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Ref</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Requirement</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Evidence</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Notes</th></tr></thead>
-                                <tbody class="bg-white divide-y divide-slate-200">${section.checklist.map((item, i) => {
-                                    const id = `${section.id}-${i}`;
-                                    const { status = 'NA', notes = '' } = complianceState[id] || {};
-                                    return `<tr><td class="px-4 py-4 align-top font-semibold">${item.ref}</td><td class="px-4 py-4 align-top"><p class="font-semibold">${item.req}</p><ul class="mt-2 list-disc list-inside text-sm text-slate-600 space-y-1">${item.q.map(q => `<li>${q}</li>`).join('')}</ul></td><td class="px-4 py-4 align-top"><ul class="list-disc list-inside text-sm text-slate-600 space-y-1">${item.evidence.map(e => `<li>${e}</li>`).join('')}</ul></td><td class="px-4 py-4 align-top"><select data-id="${id}" class="status-select mt-1 block w-full pl-3 pr-10 py-2 border-slate-300 focus:ring-purple-500 focus:border-purple-500 sm:text-sm rounded-md"><option value="NA" ${status === 'NA' ? 'selected' : ''}>N/A</option><option value="C" ${status === 'C' ? 'selected' : ''}>C</option><option value="NC" ${status === 'NC' ? 'selected' : ''}>NC</option><option value="OFI" ${status === 'OFI' ? 'selected' : ''}>OFI</option></select></td><td class="px-4 py-4 align-top"><textarea data-id="${id}" class="notes-input mt-1 block w-full text-sm border-slate-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500" rows="4">${notes}</textarea></td></tr>`;
-                                }).join('')}</tbody>
-                            </table></div></div><div class="mt-6 text-right"><button data-clause-id="${section.id}" class="save-clause-btn bg-purple-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-purple-700 active:scale-95 transition-all">Save Changes</button></div>`;
+                            <div class="mb-6"><div class="flex justify-between items-center mb-1"><span class="text-sm font-medium">Clause Progress</span><span class="text-sm font-medium">${completedEvidences}/${allEvidences.length} Evidence Points Assessed</span></div><div class="progress-bar-container"><div class="progress-bar" style="width:${progress}%;"></div></div></div>
+                            <div id="checklist-container-${section.id}"></div>`;
                     }
-                    mainContent.appendChild(sectionDiv);
+                    mainContent.appendChild(div);
+                    if (section.checklist) {
+                         renderClauseChecklist(section.id);
+                    }
                 });
                 showSection(activeId);
             }
+            
+            function renderClauseChecklist(clauseId) {
+                const container = document.getElementById(`checklist-container-${clauseId}`);
+                const sectionData = baseAuditData.find(s => s.id === clauseId);
+                const isEditMode = editModeState[clauseId] || false;
+                if (!container || !sectionData) return;
+            
+                container.innerHTML = sectionData.checklist.map((item, itemIndex) => {
+                    const itemId = `${clauseId}-${itemIndex}`;
+                    const itemState = complianceState[itemId] || { questions: [] };
+                    const questions = Array.isArray(itemState.questions) ? itemState.questions : [];
+
+                    return `<div class="bg-white rounded-lg shadow-sm overflow-hidden mb-6" data-item-id="${itemId}">
+                        <div class="p-4 bg-slate-50 border-b border-slate-200">
+                            <h3 class="font-bold text-lg">${item.ref} - ${item.req}</h3>
+                        </div>
+                        <div class="p-4">
+                            ${questions.map((q, qIndex) => `
+                                <div class="pl-4 border-l-4 border-slate-200 mb-4 question-block" data-q-index="${qIndex}">
+                                    <div class="flex items-center mb-2">
+                                        <input type="text" value="${q.text}" data-key="text" class="input-field font-semibold text-slate-800 flex-grow" ${!isEditMode ? 'readonly' : ''}>
+                                        ${isEditMode && q.isCustom ? `<button class="delete-btn delete-question-btn ml-2 p-1">&#10005;</button>` : ''}
+                                    </div>
+                                    <div class="table-wrapper">
+                                        <table class="min-w-full text-sm">
+                                            <thead class="bg-slate-100"><tr class="border-b"><th class="w-5/12 text-left p-2">Evidence</th><th class="w-2/12 text-left p-2">Status</th><th class="w-5/12 text-left p-2">Notes</th><th></th></tr></thead>
+                                            <tbody>
+                                                ${(Array.isArray(q.evidences) ? q.evidences : []).map((e, eIndex) => `
+                                                    <tr data-e-index="${eIndex}">
+                                                        <td><input type="text" value="${e.text}" data-key="text" class="input-field" ${!isEditMode ? 'readonly' : ''}></td>
+                                                        <td><select class="status-select w-full p-1 rounded border-slate-300 text-xs" data-key="s" ${!isEditMode ? 'disabled' : ''}><option value="NA" ${e.s === 'NA'?'selected':''}>N/A</option><option value="C" ${e.s === 'C'?'selected':''}>C</option><option value="NC" ${e.s === 'NC'?'selected':''}>NC</option><option value="OFI" ${e.s === 'OFI'?'selected':''}>OFI</option></select></td>
+                                                        <td><input type="text" value="${e.n}" data-key="n" class="input-field" ${!isEditMode ? 'readonly' : ''}></td>
+                                                        <td>${isEditMode && e.isCustom ? `<button class="delete-btn delete-evidence-btn p-1">&#10005;</button>` : ''}</td>
+                                                    </tr>
+                                                `).join('')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    ${isEditMode ? `<button class="add-evidence-btn mt-2 text-xs text-blue-600 font-semibold">+ Add Evidence</button>` : ''}
+                                </div>
+                            `).join('')}
+                            ${isEditMode ? `<button class="add-question-btn mt-4 text-sm text-purple-600 font-semibold">+ Add Question</button>` : ''}
+                        </div>
+                    </div>`;
+                }).join('') + `<div class="mt-2 text-right" id="actions-${clauseId}">
+                    ${isEditMode ? 
+                        `<button class="save-edit-btn bg-purple-600 text-white font-bold py-2 px-4 rounded-lg" data-clause-id="${clauseId}">Save Changes</button>` :
+                        `<button class="edit-btn bg-slate-600 text-white font-bold py-2 px-4 rounded-lg" data-clause-id="${clauseId}">Edit Clause</button>`
+                    }
+                </div>`;
+                if(isEditMode) container.classList.add('edit-mode');
+                else container.classList.remove('edit-mode');
+            }
+
 
             function showSection(id) {
                 document.querySelectorAll('.content-section').forEach(s => s.id !== id && s.classList.add('hidden'));
@@ -173,52 +219,123 @@
                 document.querySelectorAll('#nav-links a').forEach(a => a.classList.toggle('active', a.dataset.id === id));
                 if (id === 'intro') updateAllCharts();
             }
-            
-            function handleNavClick(e) { e.preventDefault(); e.target.closest('a') && showSection(e.target.closest('a').dataset.id); }
-            function handleMainContentChange(e) { if (e.target.matches('.status-select, .notes-input')) updateSingleItem(e.target.dataset.id, e.target.matches('.status-select') ? 'status' : 'notes', e.target.value); }
-            async function handleMainContentClick(e) {
-                const button = e.target.closest('.save-clause-btn');
-                if (button) {
-                    const originalText = button.textContent; button.textContent = 'Saving...'; button.disabled = true;
-                    await saveClauseData(button.dataset.clauseId);
-                    button.textContent = 'Saved!'; button.classList.replace('bg-purple-600', 'bg-blue-600');
-                    setTimeout(() => { button.textContent = originalText; button.classList.replace('bg-blue-600', 'bg-purple-600'); button.disabled = false; }, 2000);
-                }
-            }
-            
+
             function attachEventListeners() {
-                navLinksContainer.addEventListener('click', handleNavClick);
-                mainContent.addEventListener('change', handleMainContentChange);
-                mainContent.addEventListener('click', handleMainContentClick);
+                navLinksContainer.addEventListener('click', e => { e.preventDefault(); e.target.closest('a') && showSection(e.target.closest('a').dataset.id); });
+                
+                mainContent.addEventListener('click', e => {
+                    const editBtn = e.target.closest('.edit-btn');
+                    if(editBtn) {
+                        editModeState[editBtn.dataset.clauseId] = true;
+                        renderClauseChecklist(editBtn.dataset.clauseId);
+                    }
+
+                    const saveBtn = e.target.closest('.save-edit-btn');
+                    if(saveBtn) {
+                        const clauseId = saveBtn.dataset.clauseId;
+                        const tempState = JSON.parse(JSON.stringify(complianceState)); 
+                        
+                        document.querySelectorAll(`#checklist-container-${clauseId} [data-item-id]`).forEach((itemDiv) => {
+                           const itemId = itemDiv.dataset.itemId;
+                           const newQuestions = [];
+                           itemDiv.querySelectorAll('.question-block').forEach((qDiv) => {
+                               const evidences = [];
+                               qDiv.querySelectorAll('tbody tr').forEach((eRow) => {
+                                   evidences.push({
+                                       text: eRow.querySelector('input[data-key="text"]').value,
+                                       s: eRow.querySelector('select[data-key="s"]').value,
+                                       n: eRow.querySelector('input[data-key="n"]').value,
+                                       isCustom: !!eRow.querySelector('.delete-evidence-btn'),
+                                       id: `e${Date.now()}${Math.random()}`
+                                   });
+                               });
+                               newQuestions.push({
+                                   text: qDiv.querySelector('input[data-key="text"]').value,
+                                   isCustom: !!qDiv.querySelector('.delete-question-btn'),
+                                   id: `q${Date.now()}${Math.random()}`,
+                                   evidences: evidences
+                               });
+                           });
+                           tempState[itemId].questions = newQuestions;
+                        });
+                        
+                        updateDb(tempState);
+                        editModeState[clauseId] = false;
+                    }
+
+                    const addQuestionBtn = e.target.closest('.add-question-btn');
+                    if(addQuestionBtn) {
+                         const itemDiv = addQuestionBtn.closest('[data-item-id]');
+                         const qContainer = addQuestionBtn.parentElement;
+                         const newQBlock = document.createElement('div');
+                         newQBlock.className = "pl-4 border-l-4 border-slate-200 mb-4 question-block";
+                         newQBlock.innerHTML = `
+                            <div class="flex items-center mb-2">
+                                <input type="text" value="New Question" data-key="text" class="input-field font-semibold text-slate-800 flex-grow">
+                                <button class="delete-btn delete-question-btn ml-2 p-1">&#10005;</button>
+                            </div>
+                            <div class="table-wrapper"><table class="min-w-full text-sm">
+                                <thead class="bg-slate-100"><tr class="border-b"><th class="w-5/12 text-left p-2">Evidence</th><th class="w-2/12 text-left p-2">Status</th><th class="w-5/12 text-left p-2">Notes</th><th></th></tr></thead>
+                                <tbody></tbody>
+                            </table></div>
+                            <button class="add-evidence-btn mt-2 text-xs text-blue-600 font-semibold">+ Add Evidence</button>`;
+                         qContainer.insertBefore(newQBlock, addQuestionBtn);
+                    }
+                     const addEvidenceBtn = e.target.closest('.add-evidence-btn');
+                    if(addEvidenceBtn) {
+                        const tableBody = addEvidenceBtn.previousElementSibling.querySelector('tbody');
+                        const newRow = tableBody.insertRow();
+                        newRow.innerHTML = `
+                            <td><input type="text" value="New Evidence" data-key="text" class="input-field"></td>
+                            <td><select class="status-select w-full p-1 rounded border-slate-300 text-xs" data-key="s"><option value="NA" selected>N/A</option><option value="C">C</option><option value="NC">NC</option><option value="OFI">OFI</option></select></td>
+                            <td><input type="text" value="" data-key="n" class="input-field"></td>
+                            <td><button class="delete-btn delete-evidence-btn p-1">&#10005;</button></td>`;
+                    }
+
+                    const deleteQuestionBtn = e.target.closest('.delete-question-btn');
+                    if (deleteQuestionBtn) {
+                        deleteQuestionBtn.closest('.question-block').remove();
+                    }
+
+                    const deleteEvidenceBtn = e.target.closest('.delete-evidence-btn');
+                    if (deleteEvidenceBtn) {
+                        deleteEvidenceBtn.closest('tr').remove();
+                    }
+                });
             }
 
             function updateAllCharts() {
-                Object.values(charts).forEach(chart => chart?.destroy());
-                if(!complianceState || Object.keys(complianceState).length === 0) return;
-                const progressCtx = document.getElementById('progressChart')?.getContext('2d');
-                if (progressCtx) {
-                    const counts = { C: 0, NC: 0, OFI: 0 }; Object.values(complianceState).forEach(item => counts[item.status]++);
-                    charts.progress = new Chart(progressCtx, { type: 'bar', data: { labels: ['Compliant (C)', 'Non-Compliant (NC)', 'Opportunity (OFI)'], datasets: [{ data: [counts.C||0, counts.NC||0, counts.OFI||0], backgroundColor: ['#34d399', '#f87171', '#fbbf24'] }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
+                Object.values(charts).forEach(c => c?.destroy());
+                if(!complianceState || !Object.keys(complianceState).length) return;
+                
+                const allEvidences = Object.values(complianceState).flatMap(item => (item.questions || [])).flatMap(q => Array.isArray(q.evidences) ? q.evidences : []);
+                const counts = { C: 0, NC: 0, OFI: 0 };
+                allEvidences.forEach(p => { if (counts[p.s] !== undefined) counts[p.s]++; });
+
+                const pCtx = document.getElementById('progressChart')?.getContext('2d');
+                if (pCtx) charts.progress = new Chart(pCtx, {type:'bar',data:{labels:['Compliant','Non-Compliant','Opportunity'],datasets:[{data:[counts.C||0,counts.NC||0,counts.OFI||0],backgroundColor:['#34d399','#f87171','#fbbf24']}]},options:{indexAxis:'y',plugins:{legend:{display:false}}}});
+
+                const cCtx = document.getElementById('conformityChart')?.getContext('2d');
+                if (cCtx) {
+                    const applicable = allEvidences.filter(p => p.s !=='NA'), compliant = applicable.filter(p => p.s === 'C');
+                    const rate = applicable.length? (compliant.length / applicable.length) * 100 : 0;
+                    charts.conformity = new Chart(cCtx, {type:'doughnut',data:{labels:['Compliant','Other'],datasets:[{data:[rate,100-rate],backgroundColor:['#8b5cf6','#e5e7eb'],borderWidth:0}]},options:{cutout:'70%',plugins:{legend:{display:false}}}});
                 }
-                const conformityCtx = document.getElementById('conformityChart')?.getContext('2d');
-                if (conformityCtx) {
-                    const applicable = Object.values(complianceState).filter(item => item.status !== 'NA'), compliant = applicable.filter(item => item.status === 'C');
-                    const rate = applicable.length > 0 ? (compliant.length / applicable.length) * 100 : 0;
-                    charts.conformity = new Chart(conformityCtx, { type: 'doughnut', data: { labels: ['Compliant', 'Other'], datasets: [{ data: [rate, 100 - rate], backgroundColor: ['#8b5cf6', '#e5e7eb'], borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { display: false } } } });
-                }
-                const statusByClauseCtx = document.getElementById('statusByClauseChart')?.getContext('2d');
-                if (statusByClauseCtx) {
-                    const labels = auditData.filter(s => s.checklist).map(s => s.title);
-                    const datasets = [{ label: 'Compliant', data: [], backgroundColor: '#34d399' }, { label: 'Non-Compliant', data: [], backgroundColor: '#f87171' }, { label: 'Opportunity', data: [], backgroundColor: '#fbbf24' }];
-                    labels.forEach(label => {
-                        const id = auditData.find(s => s.title === label).id, items = Object.keys(complianceState).filter(k => k.startsWith(id)), counts = { C: 0, NC: 0, OFI: 0 };
-                        items.forEach(key => counts[complianceState[key].status]++);
-                        datasets[0].data.push(counts.C || 0); datasets[1].data.push(counts.NC || 0); datasets[2].data.push(counts.OFI || 0);
+                const sCtx = document.getElementById('statusByClauseChart')?.getContext('2d');
+                if(sCtx){
+                    const labels = baseAuditData.filter(s=>s.checklist).map(s=>s.title);
+                    const datasets = [{label:'Compliant',data:[],backgroundColor:'#34d399'},{label:'Non-Compliant',data:[],backgroundColor:'#f87171'},{label:'Opportunity',data:[],backgroundColor:'#fbbf24'}];
+                    labels.forEach(l=>{
+                        const idPrefix=baseAuditData.find(s=>s.title===l).id;
+                        const clauseEvidences = Object.keys(complianceState).filter(k=>k.startsWith(idPrefix)).flatMap(k => (complianceState[k].questions || [])).flatMap(q => q.evidences || []);
+                        const counts = {C:0, NC:0, OFI:0};
+                        clauseEvidences.forEach(p => { if (p.s !== 'NA') counts[p.s]++; });
+                        datasets[0].data.push(counts.C||0);datasets[1].data.push(counts.NC||0);datasets[2].data.push(counts.OFI||0);
                     });
-                    charts.statusByClause = new Chart(statusByClauseCtx, { type: 'bar', data: { labels, datasets }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { x: { stacked: true }, y: { stacked: true } } } });
+                    charts.statusByClause=new Chart(sCtx, {type:'bar',data:{labels,datasets},options:{scales:{x:{stacked:true},y:{stacked:true}}}});
                 }
             }
-
+            
             // --- App Start ---
             onAuthStateChanged(auth, user => {
                 if (user) {
